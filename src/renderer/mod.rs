@@ -33,6 +33,28 @@ use crate::term::color::Rgb;
 use crate::config::{self, Config, Delta};
 use crate::term::{self, cell, RenderableCell};
 use crate::renderer::rects::{Rect, Rects};
+//use std::collections::HashMap;
+//use std::fs::File;
+//use std::hash::BuildHasherDefault;
+//use std::io::{self, Read};
+//use std::mem::size_of;
+//use std::path::PathBuf;
+//use std::ptr;
+//use std::sync::mpsc;
+//use std::time::Duration;
+//
+//use fnv::FnvHasher;
+//use glutin::dpi::PhysicalSize;
+//use font::{self, FontDesc, FontKey, GlyphKey, Rasterize, RasterizedGlyph, Rasterizer};
+//use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
+//
+//use crate::gl::types::*;
+//use crate::gl;
+//use crate::index::{Column, Line, RangeInclusive};
+//use crate::term::color::Rgb;
+//use crate::config::{self, Config, Delta};
+//use crate::term::{self, cell, RenderableCell};
+//use crate::renderer::rects::{Rect, Rects};
 
 pub mod rects;
 
@@ -189,7 +211,7 @@ impl GlyphCache {
         // Need to load at least one glyph for the face before calling metrics.
         // The glyph requested here ('m' at the time of writing) has no special
         // meaning.
-        rasterizer.get_glyph(GlyphKey { font_key: regular, c: 'm' as _, size: font.size() })?;
+        rasterizer.get_glyph(GlyphKey { font_key: regular, c: 'm', size: font.size() })?;
 
         let metrics = rasterizer.metrics(regular, font.size())?;
 
@@ -305,8 +327,8 @@ impl GlyphCache {
         let rasterizer = &mut self.rasterizer;
         let metrics = &self.metrics;
         let fixed_glyph_key = GlyphKey {
-            c: ::std::char::from_u32(glyph_i).unwrap(),
-            ..(glyph_key.clone())
+            c: std::char::from_u32(glyph_i).unwrap(),
+            ..glyph_key
         };
         // Doesn't go through cache, making it suuuper slow.
         /*
@@ -345,7 +367,7 @@ impl GlyphCache {
         let font = font.to_owned().with_size(size);
         let (regular, bold, italic) = Self::compute_font_keys(&font, &mut self.rasterizer)?;
 
-        self.rasterizer.get_glyph(GlyphKey { font_key: regular, c: 'm' as _, size: font.size() })?;
+        self.rasterizer.get_glyph(GlyphKey { font_key: regular, c: 'm', size: font.size() })?;
         let metrics = self.rasterizer.metrics(regular, size)?;
 
         info!("Font size changed to {:?} with DPR of {}", font.size, dpr);

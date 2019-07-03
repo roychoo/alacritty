@@ -1004,8 +1004,6 @@ impl Term {
             }
         }
 
-        use std::ops::Range;
-
         trait Append : PushChar {
             fn append(
                 &mut self,
