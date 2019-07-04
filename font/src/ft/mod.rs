@@ -13,21 +13,20 @@
 // limitations under the License.
 //
 //! Rasterization powered by FreeType and FontConfig
-use std::collections::HashMap;
 use std::cmp::min;
-use std::path::PathBuf;
+use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
 
+#[cfg(feature = "hb-ft")]
+use super::HbGlyph;
 use freetype::tt_os2::TrueTypeOS2Table;
 use freetype::{self, Library};
 use libc::c_uint;
-#[cfg(feature = "hb-ft")]
-use super::HbGlyph;
-
 
 pub mod fc;
 
-use super::{FontDesc, RasterizedGlyph, Metrics, Size, FontKey, GlyphKey, Weight, Slant, Style};
+use super::{FontDesc, FontKey, GlyphKey, Metrics, RasterizedGlyph, Size, Slant, Style, Weight};
 
 struct FixedSize {
     pixelsize: f64,
@@ -50,7 +49,9 @@ struct Face {
 impl ::std::ops::Drop for Face {
     fn drop(&mut self) {
         if let Some(hb_font) = self.hb_font {
-            unsafe { harfbuzz::sys::hb_font_destroy(hb_font); }
+            unsafe {
+                harfbuzz::sys::hb_font_destroy(hb_font);
+            }
         }
     }
 }
@@ -61,14 +62,17 @@ impl fmt::Debug for Face {
             .field("ft_face", &self.ft_face)
             .field("key", &self.key)
             .field("load_flags", &self.load_flags)
-            .field("render_mode", &match self.render_mode {
-                freetype::RenderMode::Normal => "Normal",
-                freetype::RenderMode::Light => "Light",
-                freetype::RenderMode::Mono => "Mono",
-                freetype::RenderMode::Lcd => "Lcd",
-                freetype::RenderMode::LcdV => "LcdV",
-                freetype::RenderMode::Max => "Max",
-            })
+            .field(
+                "render_mode",
+                &match self.render_mode {
+                    freetype::RenderMode::Normal => "Normal",
+                    freetype::RenderMode::Light => "Light",
+                    freetype::RenderMode::Mono => "Mono",
+                    freetype::RenderMode::Lcd => "Lcd",
+                    freetype::RenderMode::LcdV => "LcdV",
+                    freetype::RenderMode::Max => "Max",
+                },
+            )
             .field("lcd_filter", &self.lcd_filter)
             .finish()
     }
@@ -102,9 +106,7 @@ impl ::Rasterize for FreeTypeRasterizer {
     }
 
     fn metrics(&self, key: FontKey, _size: Size) -> Result<Metrics, Error> {
-        let face = self.faces
-            .get(&key)
-            .ok_or(Error::FontNotLoaded)?;
+        let face = self.faces.get(&key).ok_or(Error::FontNotLoaded)?;
         let full = self.full_metrics(key)?;
 
         let height = (full.size_metrics.height / 64) as f64;
@@ -123,20 +125,19 @@ impl ::Rasterize for FreeTypeRasterizer {
 
         // Get strikeout position and thickness in device pixels
         let (strikeout_position, strikeout_thickness) =
-            match TrueTypeOS2Table::from_face(&mut face.ft_face.clone())
-        {
-            Some(os2) => {
-                let strikeout_position = f32::from(os2.y_strikeout_position()) * x_scale / 64.;
-                let strikeout_thickness = f32::from(os2.y_strikeout_size()) * x_scale / 64.;
-                (strikeout_position, strikeout_thickness)
-            },
-            _ => {
-                // Fallback if font doesn't provide info about strikeout
-                trace!("Using fallback strikeout metrics");
-                let strikeout_position = height as f32 / 2. + descent;
-                (strikeout_position, underline_thickness)
-            },
-        };
+            match TrueTypeOS2Table::from_face(&mut face.ft_face.clone()) {
+                Some(os2) => {
+                    let strikeout_position = f32::from(os2.y_strikeout_position()) * x_scale / 64.;
+                    let strikeout_thickness = f32::from(os2.y_strikeout_size()) * x_scale / 64.;
+                    (strikeout_position, strikeout_thickness)
+                }
+                _ => {
+                    // Fallback if font doesn't provide info about strikeout
+                    trace!("Using fallback strikeout metrics");
+                    let strikeout_position = height as f32 / 2. + descent;
+                    (strikeout_position, underline_thickness)
+                }
+            };
 
         Ok(Metrics {
             average_advance: full.cell_width,
@@ -171,51 +172,62 @@ fn hb_tag(f: &str) -> harfbuzz::sys::hb_tag_t {
 #[cfg(feature = "hb-ft")]
 impl ::HbFtExt for FreeTypeRasterizer {
     fn shape(&mut self, text: &str, font_key: FontKey, size: Size) -> Option<Vec<HbGlyph>> {
-        self.faces[&font_key].hb_font.map(|hb_font| {
+        let size_metrics = self.faces[&font_key].ft_face.size_metrics();
+        println!("{:?}", size_metrics);
+        self.faces[&font_key].hb_font.and_then(|hb_font| size_metrics.map(|s| (hb_font, s))).map(|(hb_font, size_metrics)| {
             let mut buf = harfbuzz::Buffer::with(text);
             buf.set_direction(harfbuzz::Direction::LTR);
-            buf.set_script(harfbuzz::sys::HB_SCRIPT_LATIN);
+            buf.set_script(harfbuzz::sys::HB_SCRIPT_COMMON);
             buf.set_language(harfbuzz::Language::from_string("en"));
             // Shape
             unsafe {
                 // ::std::ptr::null() == NULL (with type *const _)
-                harfbuzz::sys::hb_shape(hb_font, buf.as_ptr(), std::ptr::null(), 0);
+                harfbuzz::sys::hb_shape_full(
+                    hb_font,
+                    buf.as_ptr(),
+                    std::ptr::null(),
+                    0,
+                    harfbuzz::sys::hb_shape_list_shapers(),
+                );
             };
             // Get glyph information
             let ginfo: &mut [harfbuzz::sys::hb_glyph_info_t] = unsafe {
                 let mut len = 0u32;
-                let res = harfbuzz::sys::hb_buffer_get_glyph_infos(buf.as_ptr(), &mut len as *mut _);
-                ::std::slice::from_raw_parts_mut(
-                    res,
-                    len as _
-                )
+                let res =
+                    harfbuzz::sys::hb_buffer_get_glyph_infos(buf.as_ptr(), &mut len as *mut _);
+                std::slice::from_raw_parts_mut(res, len as usize)
             };
             // Get glyph positions
             let gpos: &mut [harfbuzz::sys::hb_glyph_position_t] = unsafe {
                 let mut len = 0u32;
-                let res = harfbuzz::sys::hb_buffer_get_glyph_positions(buf.as_ptr(), &mut len as *mut _);
-                ::std::slice::from_raw_parts_mut(
-                    res,
-                    len as _
-                )
+                let res =
+                    harfbuzz::sys::hb_buffer_get_glyph_positions(buf.as_ptr(), &mut len as *mut _);
+                std::slice::from_raw_parts_mut(res, len as usize)
             };
+
             // Combine into HbGlyph's
-            println!("Shaped text: {:?}", buf);
-            ginfo.iter_mut().zip(gpos.iter_mut()).map(|(gi, gp)| {
-                HbGlyph {
-                    /* ugh -_- you have to divide by 64?? */
-                    x_advance: (gp.x_advance as f32) / 64.,
-                    y_advance: (gp.y_advance as f32) / 64.,
-                    x_offset: (gp.x_offset as f32) / 64.,
-                    y_offset: (gp.y_offset as f32) / 64.,
-                    glyph: GlyphKey {
-                        c: text.chars().nth(gi.cluster as usize).expect("Expected cluster index to point to char in text None was found."),//::std::char::from_u32(gi.codepoint).expect("HB u32 is not a char!"),
-                        font_key,
-                        size,
-                    },
-                    cluster: gi.cluster,
-                }
-            }).collect()
+            ginfo
+                .iter_mut()
+                .zip(gpos.iter_mut())
+                .map(|(gi, gp)| {
+                    println!("{:?}", (&gi, &gp));
+                    HbGlyph {
+                        /* ugh -_- you have to divide by 64?? */
+                        x_advance: (gp.x_advance as f32) / 64.,
+                        y_advance: (gp.y_advance as f32) / 64.,
+                        x_offset: (gp.x_offset as f32) / 64.,
+                        y_offset: (gp.y_offset as f32) / 64.,
+                        glyph: GlyphKey {
+                            c: text.chars().nth(gi.cluster as usize).expect(
+                                "Expected cluster index to point to char in text None was found.",
+                            ), //::std::char::from_u32(gi.codepoint).expect("HB u32 is not a char!"),
+                            font_key,
+                            size,
+                        },
+                        cluster: gi.cluster,
+                    }
+                })
+                .collect()
         })
     }
 }
@@ -249,7 +261,7 @@ impl IntoFontconfigType for Weight {
 
 struct FullMetrics {
     size_metrics: freetype::ffi::FT_Size_Metrics,
-    cell_width: f64
+    cell_width: f64,
 }
 
 impl FreeTypeRasterizer {
@@ -271,21 +283,21 @@ impl FreeTypeRasterizer {
     }
 
     fn full_metrics(&self, key: FontKey) -> Result<FullMetrics, Error> {
-        let face = self.faces
-            .get(&key)
-            .ok_or(Error::FontNotLoaded)?;
+        let face = self.faces.get(&key).ok_or(Error::FontNotLoaded)?;
 
-        let size_metrics = face.ft_face.size_metrics()
+        let size_metrics = face
+            .ft_face
+            .size_metrics()
             .ok_or(Error::MissingSizeMetrics)?;
 
         let width = match face.ft_face.load_char('0' as usize, face.load_flags) {
-            Ok(_)  => face.ft_face.glyph().metrics().horiAdvance / 64,
-            Err(_) => size_metrics.max_advance / 64
+            Ok(_) => face.ft_face.glyph().metrics().horiAdvance / 64,
+            Err(_) => size_metrics.max_advance / 64,
         } as f64;
 
         Ok(FullMetrics {
             size_metrics,
-            cell_width: width
+            cell_width: width,
         })
     }
 
@@ -305,12 +317,11 @@ impl FreeTypeRasterizer {
         let font = fc::font_match(fc::Config::get_current(), &mut pattern)
             .ok_or_else(|| Error::MissingFont(desc.to_owned()))?;
 
-        self.face_from_pattern(&font)
-            .and_then(|pattern| {
-                pattern
-                    .map(Ok)
-                    .unwrap_or_else(|| Err(Error::MissingFont(desc.to_owned())))
-            })
+        self.face_from_pattern(&font).and_then(|pattern| {
+            pattern
+                .map(Ok)
+                .unwrap_or_else(|| Err(Error::MissingFont(desc.to_owned())))
+        })
     }
 
     fn get_specific_face(
@@ -326,12 +337,11 @@ impl FreeTypeRasterizer {
 
         let font = fc::font_match(fc::Config::get_current(), &mut pattern)
             .ok_or_else(|| Error::MissingFont(desc.to_owned()))?;
-        self.face_from_pattern(&font)
-            .and_then(|pattern| {
-                pattern
-                    .map(Ok)
-                    .unwrap_or_else(|| Err(Error::MissingFont(desc.to_owned())))
-            })
+        self.face_from_pattern(&font).and_then(|pattern| {
+            pattern
+                .map(Ok)
+                .unwrap_or_else(|| Err(Error::MissingFont(desc.to_owned())))
+        })
     }
 
     fn face_from_pattern(&mut self, pattern: &fc::Pattern) -> Result<Option<FontKey>, Error> {
@@ -363,25 +373,22 @@ impl FreeTypeRasterizer {
                 let mut f = ::std::fs::File::open(&path).unwrap();
                 f.read_to_end(&mut buf).unwrap();
                 let blob = harfbuzz::Blob::new_read_only(&buf);
-                let _hb_face = unsafe {
-                    harfbuzz::sys::hb_face_create(blob.as_raw(), index as u32)
-                };
+                let _hb_face =
+                    unsafe { harfbuzz::sys::hb_face_create(blob.as_raw(), index as u32) };
                 if _hb_face.is_null() {
                     None
                 } else {
-                    let _hb_font = unsafe {
-                        harfbuzz::sys::hb_font_create(_hb_face)
-                    };
+                    let _hb_font = unsafe { harfbuzz::sys::hb_font_create(_hb_face) };
                     if _hb_font.is_null() {
                         None
                     } else {
-                        unsafe { harfbuzz::sys::hb_ot_font_set_funcs(_hb_font); }
-                        println!("Could create harfbuzz font");
+                        unsafe {
+                            harfbuzz::sys::hb_ot_font_set_funcs(_hb_font);
+                        }
                         Some(_hb_font)
                     }
                 }
             };
-
 
             let face = Face {
                 ft_face,
@@ -406,7 +413,11 @@ impl FreeTypeRasterizer {
         }
     }
 
-    fn face_for_glyph(&mut self, glyph_key: GlyphKey, have_recursed: bool) -> Result<FontKey, Error> {
+    fn face_for_glyph(
+        &mut self,
+        glyph_key: GlyphKey,
+        have_recursed: bool,
+    ) -> Result<FontKey, Error> {
         let c = glyph_key.c;
 
         let use_initial_face = if let Some(face) = self.faces.get(&glyph_key.font_key) {
@@ -425,8 +436,7 @@ impl FreeTypeRasterizer {
         }
     }
 
-    fn get_rendered_glyph(&mut self, glyph_key: GlyphKey)
-                          -> Result<RasterizedGlyph, Error> {
+    fn get_rendered_glyph(&mut self, glyph_key: GlyphKey) -> Result<RasterizedGlyph, Error> {
         // Render a custom symbol for the underline and beam cursor
         match glyph_key.c {
             super::UNDERLINE_CURSOR_CHAR => {
@@ -442,7 +452,7 @@ impl FreeTypeRasterizer {
 
                 // Return the new custom glyph
                 return super::get_underline_cursor_glyph(descent, width);
-            },
+            }
             super::BEAM_CURSOR_CHAR | super::BOX_CURSOR_CHAR => {
                 // Get the primary face metrics
                 // This always loads the default face
@@ -464,7 +474,7 @@ impl FreeTypeRasterizer {
                 } else {
                     super::get_box_cursor_glyph(ascent, height, width)
                 };
-            },
+            }
             _ => (),
         }
 
@@ -473,11 +483,14 @@ impl FreeTypeRasterizer {
         let face = &self.faces[&font_key];
         let index = face.ft_face.get_char_index(glyph_key.c as usize);
 
-        let size = face.non_scalable.as_ref()
+        let size = face
+            .non_scalable
+            .as_ref()
             .map(|v| v.pixelsize as f32)
             .unwrap_or_else(|| glyph_key.size.as_f32_pts() * self.device_pixel_ratio * 96. / 72.);
 
-        face.ft_face.set_char_size(to_freetype_26_6(size), 0, 0, 0)?;
+        face.ft_face
+            .set_char_size(to_freetype_26_6(size), 0, 0, 0)?;
 
         unsafe {
             let ft_lib = self.library.raw();
@@ -500,16 +513,22 @@ impl FreeTypeRasterizer {
         })
     }
 
-    pub fn get_glyph_raw(&mut self, glyph_key: GlyphKey, glyph_i: u32)
-        -> Result<RasterizedGlyph, Error> {
+    pub fn get_glyph_raw(
+        &mut self,
+        glyph_key: GlyphKey,
+        glyph_i: u32,
+    ) -> Result<RasterizedGlyph, Error> {
         let font_key = self.face_for_glyph(glyph_key, false)?;
         let face = &self.faces[&font_key];
 
-        let size = face.non_scalable.as_ref()
+        let size = face
+            .non_scalable
+            .as_ref()
             .map(|v| v.pixelsize as f32)
             .unwrap_or_else(|| glyph_key.size.as_f32_pts() * self.device_pixel_ratio * 96. / 72.);
 
-        face.ft_face.set_char_size(to_freetype_26_6(size), 0, 0, 0)?;
+        face.ft_face
+            .set_char_size(to_freetype_26_6(size), 0, 0, 0)?;
 
         unsafe {
             let ft_lib = self.library.raw();
@@ -594,7 +613,9 @@ impl FreeTypeRasterizer {
     /// Given a FreeType `Bitmap`, returns packed buffer with 1 byte per LCD channel.
     ///
     /// The i32 value in the return type is the number of pixels per row.
-    fn normalize_buffer(bitmap: &freetype::bitmap::Bitmap) -> freetype::FtResult<(i32, i32, Vec<u8>)> {
+    fn normalize_buffer(
+        bitmap: &freetype::bitmap::Bitmap,
+    ) -> freetype::FtResult<(i32, i32, Vec<u8>)> {
         use freetype::bitmap::PixelMode;
 
         let buf = bitmap.buffer();
@@ -608,9 +629,9 @@ impl FreeTypeRasterizer {
                     packed.extend_from_slice(&buf[start..stop]);
                 }
                 Ok((bitmap.rows(), bitmap.width() / 3, packed))
-            },
+            }
             PixelMode::LcdV => {
-                for i in 0..bitmap.rows()/3 {
+                for i in 0..bitmap.rows() / 3 {
                     for j in 0..bitmap.width() {
                         for k in 0..3 {
                             let offset = ((i as usize) * 3 + k) * pitch + (j as usize);
@@ -619,7 +640,7 @@ impl FreeTypeRasterizer {
                     }
                 }
                 Ok((bitmap.rows() / 3, bitmap.width(), packed))
-            },
+            }
             // Mono data is stored in a packed format using 1 bit per pixel.
             PixelMode::Mono => {
                 fn unpack_byte(res: &mut Vec<u8>, byte: u8, mut count: u8) {
@@ -650,7 +671,7 @@ impl FreeTypeRasterizer {
                     }
                 }
                 Ok((bitmap.rows(), bitmap.width(), packed))
-            },
+            }
             // Gray data is stored as a value between 0 and 255 using 1 byte per pixel.
             PixelMode::Gray => {
                 for i in 0..bitmap.rows() {
@@ -663,15 +684,12 @@ impl FreeTypeRasterizer {
                     }
                 }
                 Ok((bitmap.rows(), bitmap.width(), packed))
-            },
-            mode => panic!("unhandled pixel mode: {:?}", mode)
+            }
+            mode => panic!("unhandled pixel mode: {:?}", mode),
         }
     }
 
-    fn load_face_with_glyph(
-        &mut self,
-        glyph: char,
-    ) -> Result<FontKey, Error> {
+    fn load_face_with_glyph(&mut self, glyph: char) -> Result<FontKey, Error> {
         let mut charset = fc::CharSet::new();
         charset.add(glyph);
         let mut pattern = fc::Pattern::new();
@@ -687,7 +705,7 @@ impl FreeTypeRasterizer {
                         Some(&key) => {
                             debug!("Hit for font {:?}; no need to load", path);
                             Ok(key)
-                        },
+                        }
 
                         None => {
                             debug!("Miss for font {:?}; loading now", path);
@@ -697,17 +715,17 @@ impl FreeTypeRasterizer {
                             Ok(key)
                         }
                     }
+                } else {
+                    Err(Error::MissingFont(FontDesc::new(
+                        "fallback-without-path",
+                        Style::Specific(glyph.to_string()),
+                    )))
                 }
-                else {
-                Err(Error::MissingFont(
-                    FontDesc::new("fallback-without-path", Style::Specific(glyph.to_string()))))
-                }
-            },
-            None => {
-                Err(Error::MissingFont(
-                    FontDesc::new("no-fallback-for", Style::Specific(glyph.to_string()))
-                ))
             }
+            None => Err(Error::MissingFont(FontDesc::new(
+                "no-fallback-for",
+                Style::Specific(glyph.to_string()),
+            ))),
         }
     }
 }
@@ -749,16 +767,14 @@ impl ::std::error::Error for Error {
 impl ::std::fmt::Display for Error {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            Error::FreeType(ref err) => {
-                err.fmt(f)
-            },
-            Error::MissingFont(ref desc) => {
-                write!(f, "Couldn't find a font with {}\
-                       \n\tPlease check the font config in your alacritty.yml.", desc)
-            },
-            Error::FontNotLoaded => {
-                f.write_str("Tried to use a font that hasn't been loaded")
-            },
+            Error::FreeType(ref err) => err.fmt(f),
+            Error::MissingFont(ref desc) => write!(
+                f,
+                "Couldn't find a font with {}\
+                 \n\tPlease check the font config in your alacritty.yml.",
+                desc
+            ),
+            Error::FontNotLoaded => f.write_str("Tried to use a font that hasn't been loaded"),
             Error::MissingSizeMetrics => {
                 f.write_str("Tried to get size metrics from a face without a size")
             }

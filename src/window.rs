@@ -15,16 +15,15 @@ use std::convert::From;
 use std::fmt::Display;
 
 use crate::gl;
+use glutin::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize};
 #[cfg(windows)]
 use glutin::Icon;
+use glutin::{
+    self, ContextBuilder, ContextTrait, ControlFlow, Event, EventsLoop,
+    MouseCursor as GlutinMouseCursor, WindowBuilder,
+};
 #[cfg(windows)]
 use image::ImageFormat;
-use glutin::{
-    self, ContextBuilder, ControlFlow, Event, EventsLoop,
-    MouseCursor as GlutinMouseCursor, WindowBuilder,
-    ContextTrait,
-};
-use glutin::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize};
 
 use crate::cli::Options;
 use crate::config::{Decorations, WindowConfig};
@@ -255,7 +254,7 @@ impl Window {
     pub fn get_platform_window(
         title: &str,
         class: &str,
-        window_config: &WindowConfig
+        window_config: &WindowConfig,
     ) -> WindowBuilder {
         use glutin::os::unix::WindowBuilderExt;
 
@@ -280,7 +279,7 @@ impl Window {
     pub fn get_platform_window(
         title: &str,
         _class: &str,
-        window_config: &WindowConfig
+        window_config: &WindowConfig,
     ) -> WindowBuilder {
         let icon = Icon::from_bytes_with_format(WINDOW_ICON, ImageFormat::ICO).unwrap();
 
@@ -302,7 +301,7 @@ impl Window {
     pub fn get_platform_window(
         title: &str,
         _class: &str,
-        window_config: &WindowConfig
+        window_config: &WindowConfig,
     ) -> WindowBuilder {
         use glutin::os::macos::WindowBuilderExt;
 
@@ -323,19 +322,16 @@ impl Window {
                 .with_titlebar_buttons_hidden(true)
                 .with_titlebar_transparent(true)
                 .with_fullsize_content_view(true),
-            Decorations::None => window
-                .with_titlebar_hidden(true),
+            Decorations::None => window.with_titlebar_hidden(true),
         }
     }
 
-    #[cfg(
-        any(
-            target_os = "linux",
-            target_os = "freebsd",
-            target_os = "dragonfly",
-            target_os = "openbsd"
-        )
-    )]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "openbsd"
+    ))]
     pub fn set_urgent(&self, is_urgent: bool) {
         use glutin::os::unix::WindowExt;
         self.window.set_urgent(is_urgent);
@@ -379,21 +375,20 @@ pub trait OsExtensions {
     fn run_os_extensions(&self) {}
 }
 
-#[cfg(
-    not(
-        any(
-            target_os = "linux",
-            target_os = "freebsd",
-            target_os = "dragonfly",
-            target_os = "openbsd"
-        )
-    )
-)]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+    target_os = "openbsd"
+)))]
 impl OsExtensions for Window {}
 
-#[cfg(
-    any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "openbsd")
-)]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+    target_os = "openbsd"
+))]
 impl OsExtensions for Window {
     fn run_os_extensions(&self) {
         use glutin::os::unix::WindowExt;

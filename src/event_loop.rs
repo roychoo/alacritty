@@ -1,10 +1,10 @@
 //! The main event loop which performs I/O on the pseudoterminal
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::io::{self, ErrorKind, Read, Write};
 use std::fs::File;
-use std::sync::Arc;
+use std::io::{self, ErrorKind, Read, Write};
 use std::marker::Send;
+use std::sync::Arc;
 
 use mio::{self, Events, PollOpt, Ready};
 use mio_extras::channel::{self, Receiver, Sender};
@@ -15,10 +15,10 @@ use mio::unix::UnixReady;
 use crate::ansi;
 use crate::display;
 use crate::event;
-use crate::tty;
-use crate::term::Term;
-use crate::util::thread;
 use crate::sync::FairMutex;
+use crate::term::Term;
+use crate::tty;
+use crate::util::thread;
 
 /// Messages that may be sent to the `EventLoop`
 #[derive(Debug)]
@@ -58,14 +58,14 @@ enum DrainResult {
     /// Nothing was available to receive
     Empty,
     /// A shutdown message was received
-    Shutdown
+    Shutdown,
 }
 
 impl DrainResult {
     pub fn is_shutdown(&self) -> bool {
         match *self {
             DrainResult::Shutdown => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -84,12 +84,13 @@ pub struct Notifier(pub Sender<Msg>);
 
 impl event::Notify for Notifier {
     fn notify<B>(&mut self, bytes: B)
-    where B: Into<Cow<'static, [u8]>>,
+    where
+        B: Into<Cow<'static, [u8]>>,
     {
         let bytes = bytes.into();
         // terminal hangs if we send 0 bytes through.
         if bytes.len() == 0 {
-            return
+            return;
         }
         if self.0.send(Msg::Input(bytes)).is_err() {
             panic!("expected send event loop msg");
@@ -117,9 +118,7 @@ impl State {
 
     #[inline]
     fn goto_next(&mut self) {
-        self.writing = self.write_list
-            .pop_front()
-            .map(Writing::new);
+        self.writing = self.write_list.pop_front().map(Writing::new);
     }
 
     #[inline]
@@ -141,7 +140,10 @@ impl State {
 impl Writing {
     #[inline]
     fn new(c: Cow<'static, [u8]>) -> Writing {
-        Writing { source: c, written: 0 }
+        Writing {
+            source: c,
+            written: 0,
+        }
     }
 
     #[inline]
@@ -161,8 +163,8 @@ impl Writing {
 }
 
 impl<T> EventLoop<T>
-    where
-        T: tty::EventedPty + Send + 'static,
+where
+    T: tty::EventedPty + Send + 'static,
 {
     /// Create a new event loop
     pub fn new(
@@ -220,7 +222,12 @@ impl<T> EventLoop<T>
         }
 
         self.poll
-            .reregister(&self.rx, token, Ready::readable(), PollOpt::edge() | PollOpt::oneshot())
+            .reregister(
+                &self.rx,
+                token,
+                Ready::readable(),
+                PollOpt::edge() | PollOpt::oneshot(),
+            )
             .unwrap();
 
         true
@@ -233,8 +240,8 @@ impl<T> EventLoop<T>
         buf: &mut [u8],
         mut writer: Option<&mut X>,
     ) -> io::Result<()>
-        where
-            X: Write,
+    where
+        X: Write,
     {
         const MAX_READ: usize = 0x1_0000;
         let mut processed = 0;
@@ -374,7 +381,7 @@ impl<T> EventLoop<T>
                             if !self.channel_event(channel_token, &mut state) {
                                 break 'event_loop;
                             }
-                        },
+                        }
 
                         #[cfg(unix)]
                         token if token == self.pty.child_event_token() => {
@@ -383,10 +390,14 @@ impl<T> EventLoop<T>
                                 self.display.notify();
                                 break 'event_loop;
                             }
-                        },
+                        }
 
-                        token if token == self.pty.read_token() || token == self.pty.write_token() => {
-                            #[cfg(unix)] {
+                        token
+                            if token == self.pty.read_token()
+                                || token == self.pty.write_token() =>
+                        {
+                            #[cfg(unix)]
+                            {
                                 if UnixReady::from(event.readiness()).is_hup() {
                                     // don't try to do I/O on a dead PTY
                                     continue;
@@ -395,7 +406,8 @@ impl<T> EventLoop<T>
 
                             if event.readiness().is_readable() {
                                 if let Err(e) = self.pty_read(&mut state, &mut buf, pipe.as_mut()) {
-                                    #[cfg(target_os = "linux")] {
+                                    #[cfg(target_os = "linux")]
+                                    {
                                         // On Linux, a `read` on the master side of a PTY can fail
                                         // with `EIO` if the client side hangs up.  In that case,
                                         // just loop back round for the inevitable `Exited` event.
@@ -428,7 +440,9 @@ impl<T> EventLoop<T>
                     interest.insert(Ready::writable());
                 }
                 // Reregister with new interest
-                self.pty.reregister(&self.poll, interest, poll_opts).unwrap();
+                self.pty
+                    .reregister(&self.poll, interest, poll_opts)
+                    .unwrap();
             }
 
             // The evented instances are not dropped here so deregister them explicitly

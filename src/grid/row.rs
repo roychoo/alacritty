@@ -14,9 +14,9 @@
 
 //! Defines the Row type which makes up lines in the grid
 
+use std::cmp::{max, min};
 use std::ops::{Index, IndexMut};
-use std::ops::{Range, RangeTo, RangeFrom, RangeFull, RangeToInclusive};
-use std::cmp::{min, max};
+use std::ops::{Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
 use std::slice;
 
 use crate::grid::GridCell;
@@ -62,7 +62,7 @@ impl<T: Copy> Row<T> {
 
     pub fn shrink(&mut self, cols: Column) -> Option<Vec<T>>
     where
-        T: GridCell
+        T: GridCell,
     {
         if self.inner.len() <= cols.0 {
             return None;
@@ -70,7 +70,11 @@ impl<T: Copy> Row<T> {
 
         // Split off cells for a new row
         let mut new_row = self.inner.split_off(cols.0);
-        let index = new_row.iter().rposition(|c| !c.is_empty()).map(|i| i + 1).unwrap_or(0);
+        let index = new_row
+            .iter()
+            .rposition(|c| !c.is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(0);
         new_row.truncate(index);
 
         self.occ = min(self.occ, *cols);
@@ -96,10 +100,7 @@ impl<T: Copy> Row<T> {
 impl<T> Row<T> {
     #[inline]
     pub fn from_vec(vec: Vec<T>, occ: usize) -> Row<T> {
-        Row {
-            inner: vec,
-            occ,
-        }
+        Row { inner: vec, occ }
     }
 
     #[inline]
@@ -121,10 +122,15 @@ impl<T> Row<T> {
     #[inline]
     pub fn append(&mut self, vec: &mut Vec<T>)
     where
-        T: GridCell
+        T: GridCell,
     {
         self.inner.append(vec);
-        self.occ = self.inner.iter().rposition(|c| !c.is_empty()).map(|i| i + 1).unwrap_or(0);
+        self.occ = self
+            .inner
+            .iter()
+            .rposition(|c| !c.is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(0);
     }
 
     #[inline]
@@ -137,7 +143,7 @@ impl<T> Row<T> {
     #[inline]
     pub fn is_empty(&self) -> bool
     where
-        T: GridCell
+        T: GridCell,
     {
         self.inner.iter().all(|c| c.is_empty())
     }

@@ -18,7 +18,12 @@
 //! FreeType is used on everything that's not Mac OS.
 //! Eventually, ClearType support will be available for windows
 
-#![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use, clippy::wrong_pub_self_convention)]
+#![deny(
+    clippy::all,
+    clippy::if_not_else,
+    clippy::enum_glob_use,
+    clippy::wrong_pub_self_convention
+)]
 
 /* Note: all applicable cfg statements have been modified to short-circuit
  * to freetype if the feature hb-ft is enabled.
@@ -48,13 +53,12 @@ extern crate libc;
 #[cfg(feature = "hb-ft")]
 extern crate harfbuzz;
 
-
 #[cfg_attr(not(windows), macro_use)]
 extern crate log;
 
 use std::hash::{Hash, Hasher};
-use std::{fmt, cmp};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{cmp, fmt};
 
 // If target isn't macos or windows, reexport everything from ft
 #[cfg(any(not(any(target_os = "macos", windows)), feature = "hb-ft"))]
@@ -177,7 +181,8 @@ impl Hash for GlyphKey {
             // - If GlyphKey ever becomes a different size, this will fail to compile
             // - Result is being used for hashing and has no fields (it's a u64)
             ::std::mem::transmute::<GlyphKey, u64>(*self)
-        }.hash(state);
+        }
+        .hash(state);
     }
 }
 
@@ -295,8 +300,11 @@ pub fn get_box_cursor_glyph(
     let mut buf = Vec::with_capacity((width * height * 3) as usize);
     for y in 0..height {
         for x in 0..width {
-            if y < border_width || y >= height - border_width ||
-               x < border_width || x >= width - border_width {
+            if y < border_width
+                || y >= height - border_width
+                || x < border_width
+                || x >= width - border_width
+            {
                 buf.append(&mut vec![255u8; 3]);
             } else {
                 buf.append(&mut vec![0u8; 3]);

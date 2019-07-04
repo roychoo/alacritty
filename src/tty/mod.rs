@@ -57,7 +57,7 @@ pub trait EventedReadWrite {
 #[derive(PartialEq)]
 pub enum ChildEvent {
     /// Indicates the child has exited
-    Exited
+    Exited,
 }
 
 /// A pseudoterminal (or PTY)
@@ -65,7 +65,7 @@ pub enum ChildEvent {
 /// This is a refinement of EventedReadWrite that also provides a channel through which we can be
 /// notified if the PTY child process does something we care about (other than writing to the TTY).
 /// In particular, this allows for race-free child exit notification on UNIX (cf. `SIGCHLD`).
-pub trait EventedPty : EventedReadWrite {
+pub trait EventedPty: EventedReadWrite {
     #[cfg(unix)]
     fn child_event_token(&self) -> mio::Token;
 

@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{cmp, io};
 use std::ffi::OsStr;
 use std::process::Command;
+use std::{cmp, io};
 
 #[cfg(not(windows))]
 use std::os::unix::process::CommandExt;
@@ -88,9 +88,9 @@ pub mod fmt {
 
 #[cfg(not(windows))]
 pub fn start_daemon<I, S>(program: &str, args: I) -> io::Result<()>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
 {
     Command::new(program)
         .args(args)
@@ -105,9 +105,9 @@ pub fn start_daemon<I, S>(program: &str, args: I) -> io::Result<()>
 
 #[cfg(windows)]
 pub fn start_daemon<I, S>(program: &str, args: I) -> io::Result<()>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
 {
     // Setting all the I/O handles to null and setting the
     // CREATE_NEW_PROCESS_GROUP and CREATE_NO_WINDOW has the effect

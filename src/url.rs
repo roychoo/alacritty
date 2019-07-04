@@ -128,9 +128,9 @@ mod tests {
 
     use crate::grid::Grid;
     use crate::index::{Column, Line, Point};
-    use crate::term::{Search, SizeInfo, Term};
-    use crate::term::cell::Cell;
     use crate::message_bar::MessageBuffer;
+    use crate::term::cell::Cell;
+    use crate::term::{Search, SizeInfo, Term};
 
     fn url_create_term(input: &str) -> Term {
         let size = SizeInfo {
@@ -172,21 +172,45 @@ mod tests {
 
     #[test]
     fn url_matching_chars() {
-        url_test("(https://example.org/test(ing))", "https://example.org/test(ing)", 5);
-        url_test("https://example.org/test(ing)", "https://example.org/test(ing)", 5);
+        url_test(
+            "(https://example.org/test(ing))",
+            "https://example.org/test(ing)",
+            5,
+        );
+        url_test(
+            "https://example.org/test(ing)",
+            "https://example.org/test(ing)",
+            5,
+        );
         url_test("((https://example.org))", "https://example.org", 5);
         url_test(")https://example.org(", "https://example.org", 5);
         url_test("https://example.org)", "https://example.org", 5);
         url_test("https://example.org(", "https://example.org", 5);
         url_test("(https://one.org/)(https://two.org/)", "https://one.org", 5);
 
-        url_test("https://[2001:db8:a0b:12f0::1]:80", "https://[2001:db8:a0b:12f0::1]:80", 5);
-        url_test("([(https://example.org/test(ing))])", "https://example.org/test(ing)", 5);
+        url_test(
+            "https://[2001:db8:a0b:12f0::1]:80",
+            "https://[2001:db8:a0b:12f0::1]:80",
+            5,
+        );
+        url_test(
+            "([(https://example.org/test(ing))])",
+            "https://example.org/test(ing)",
+            5,
+        );
         url_test("https://example.org/]()", "https://example.org", 5);
         url_test("[https://example.org]", "https://example.org", 5);
 
-        url_test("'https://example.org/test'ing'''", "https://example.org/test'ing'", 5);
-        url_test("https://example.org/test'ing'", "https://example.org/test'ing'", 5);
+        url_test(
+            "'https://example.org/test'ing'''",
+            "https://example.org/test'ing'",
+            5,
+        );
+        url_test(
+            "https://example.org/test'ing'",
+            "https://example.org/test'ing'",
+            5,
+        );
         url_test("'https://example.org'", "https://example.org", 5);
         url_test("'https://example.org", "https://example.org", 5);
         url_test("https://example.org'", "https://example.org", 5);
@@ -194,17 +218,45 @@ mod tests {
 
     #[test]
     fn url_detect_end() {
-        url_test("https://example.org/test\u{00}ing", "https://example.org/test", 5);
-        url_test("https://example.org/test\u{1F}ing", "https://example.org/test", 5);
-        url_test("https://example.org/test\u{7F}ing", "https://example.org/test", 5);
-        url_test("https://example.org/test\u{9F}ing", "https://example.org/test", 5);
-        url_test("https://example.org/test\ting", "https://example.org/test", 5);
-        url_test("https://example.org/test ing", "https://example.org/test", 5);
+        url_test(
+            "https://example.org/test\u{00}ing",
+            "https://example.org/test",
+            5,
+        );
+        url_test(
+            "https://example.org/test\u{1F}ing",
+            "https://example.org/test",
+            5,
+        );
+        url_test(
+            "https://example.org/test\u{7F}ing",
+            "https://example.org/test",
+            5,
+        );
+        url_test(
+            "https://example.org/test\u{9F}ing",
+            "https://example.org/test",
+            5,
+        );
+        url_test(
+            "https://example.org/test\ting",
+            "https://example.org/test",
+            5,
+        );
+        url_test(
+            "https://example.org/test ing",
+            "https://example.org/test",
+            5,
+        );
     }
 
     #[test]
     fn url_remove_end_chars() {
-        url_test("https://example.org/test?ing", "https://example.org/test?ing", 5);
+        url_test(
+            "https://example.org/test?ing",
+            "https://example.org/test?ing",
+            5,
+        );
         url_test("https://example.org.,;:)'!/?", "https://example.org", 5);
         url_test("https://example.org'.", "https://example.org", 5);
     }
@@ -219,10 +271,26 @@ mod tests {
 
     #[test]
     fn url_unicode() {
-        url_test("https://xn--example-2b07f.org", "https://xn--example-2b07f.org", 5);
-        url_test("https://example.org/\u{2008A}", "https://example.org/\u{2008A}", 5);
-        url_test("https://example.org/\u{f17c}", "https://example.org/\u{f17c}", 5);
-        url_test("https://üñîçøðé.com/ä", "https://üñîçøðé.com/ä", 5);
+        url_test(
+            "https://xn--example-2b07f.org",
+            "https://xn--example-2b07f.org",
+            5,
+        );
+        url_test(
+            "https://example.org/\u{2008A}",
+            "https://example.org/\u{2008A}",
+            5,
+        );
+        url_test(
+            "https://example.org/\u{f17c}",
+            "https://example.org/\u{f17c}",
+            5,
+        );
+        url_test(
+            "https://üñîçøðé.com/ä",
+            "https://üñîçøðé.com/ä",
+            5,
+        );
     }
 
     #[test]

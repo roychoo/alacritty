@@ -14,9 +14,9 @@
 #[cfg(windows)]
 use embed_resource;
 #[cfg(windows)]
-use tempfile;
-#[cfg(windows)]
 use reqwest;
+#[cfg(windows)]
+use tempfile;
 #[cfg(windows)]
 use zip;
 
@@ -27,12 +27,13 @@ use std::fs::File;
 use std::path::Path;
 
 #[cfg(windows)]
-use std::io;
-#[cfg(windows)]
 use std::fs::OpenOptions;
+#[cfg(windows)]
+use std::io;
 
 #[cfg(windows)]
-const WINPTY_PACKAGE_URL: &str = "https://github.com/rprichard/winpty/releases/download/0.4.3/winpty-0.4.3-msvc2015.zip";
+const WINPTY_PACKAGE_URL: &str =
+    "https://github.com/rprichard/winpty/releases/download/0.4.3/winpty-0.4.3-msvc2015.zip";
 
 fn main() {
     let dest = env::var("OUT_DIR").unwrap();
@@ -44,8 +45,9 @@ fn main() {
         Profile::Core,
         Fallbacks::All,
         ["GL_ARB_blend_func_extended"],
-    ).write_bindings(GlobalGenerator, &mut file)
-        .unwrap();
+    )
+    .write_bindings(GlobalGenerator, &mut file)
+    .unwrap();
 
     #[cfg(windows)]
     {
@@ -61,14 +63,18 @@ fn main() {
 
 #[cfg(windows)]
 fn aquire_winpty_agent(out_path: &Path) {
-    let tmp_dir = tempfile::Builder::new().prefix("alacritty_build").tempdir().unwrap();
+    let tmp_dir = tempfile::Builder::new()
+        .prefix("alacritty_build")
+        .tempdir()
+        .unwrap();
 
     let mut response = reqwest::get(WINPTY_PACKAGE_URL).unwrap();
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .open(tmp_dir.path().join("winpty_package.zip")).unwrap();
+        .open(tmp_dir.path().join("winpty_package.zip"))
+        .unwrap();
 
     io::copy(&mut response, &mut file).unwrap();
 
@@ -77,10 +83,12 @@ fn aquire_winpty_agent(out_path: &Path) {
     let target = match env::var("TARGET").unwrap().split("-").next().unwrap() {
         "x86_64" => "x64",
         "i386" => "ia32",
-        _ => panic!("architecture has no winpty binary")
+        _ => panic!("architecture has no winpty binary"),
     };
 
-    let mut winpty_agent = archive.by_name(&format!("{}/bin/winpty-agent.exe", target)).unwrap();
+    let mut winpty_agent = archive
+        .by_name(&format!("{}/bin/winpty-agent.exe", target))
+        .unwrap();
 
     io::copy(&mut winpty_agent, &mut File::create(out_path).unwrap()).unwrap();
 }

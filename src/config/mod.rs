@@ -4,27 +4,27 @@
 //! parameters including font family and style, font size, etc. In the future,
 //! the config file will also hold user and platform specific keybindings.
 use std::borrow::Cow;
-use std::{env, fmt};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::mpsc;
 use std::time::Duration;
-use std::collections::HashMap;
+use std::{env, fmt};
 
 use font::Size;
-use serde_yaml;
-use serde::{self, de, Deserialize};
-use serde::de::Error as SerdeError;
-use serde::de::{Visitor, MapAccess, Unexpected};
-use notify::{Watcher, watcher, DebouncedEvent, RecursiveMode};
 use glutin::ModifiersState;
+use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
+use serde::de::Error as SerdeError;
+use serde::de::{MapAccess, Unexpected, Visitor};
+use serde::{self, de, Deserialize};
+use serde_yaml;
 
+use crate::ansi::{Color, CursorStyle, NamedColor};
 use crate::cli::Options;
-use crate::input::{Action, Binding, MouseBinding, KeyBinding};
-use crate::index::{Line, Column};
-use crate::ansi::{CursorStyle, NamedColor, Color};
+use crate::index::{Column, Line};
+use crate::input::{Action, Binding, KeyBinding, MouseBinding};
 use crate::term::color::Rgb;
 
 mod bindings;
@@ -53,14 +53,15 @@ impl Default for Selection {
 }
 
 fn deserialize_escape_chars<'a, D>(deserializer: D) -> ::std::result::Result<String, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match String::deserialize(deserializer) {
         Ok(escape_chars) => Ok(escape_chars),
         Err(err) => {
             error!("Problem with config: {}; using default value", err);
             Ok(default_escape_chars())
-        },
+        }
     }
 }
 
@@ -77,7 +78,9 @@ pub struct ClickHandler {
 
 impl Default for ClickHandler {
     fn default() -> Self {
-        ClickHandler { threshold: default_threshold_ms() }
+        ClickHandler {
+            threshold: default_threshold_ms(),
+        }
     }
 }
 
@@ -86,14 +89,15 @@ fn default_threshold_ms() -> Duration {
 }
 
 fn deserialize_duration_ms<'a, D>(deserializer: D) -> ::std::result::Result<Duration, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match u64::deserialize(deserializer) {
         Ok(threshold_ms) => Ok(Duration::from_millis(threshold_ms)),
         Err(err) => {
             error!("Problem with config: {}; using default value", err);
             Ok(default_threshold_ms())
-        },
+        }
     }
 }
 
@@ -125,8 +129,11 @@ pub struct Url {
     pub modifiers: ModifiersState,
 }
 
-fn deserialize_launcher<'a, D>(deserializer: D) -> ::std::result::Result<Option<CommandWrapper>, D::Error>
-    where D: de::Deserializer<'a>
+fn deserialize_launcher<'a, D>(
+    deserializer: D,
+) -> ::std::result::Result<Option<CommandWrapper>, D::Error>
+where
+    D: de::Deserializer<'a>,
 {
     let default = Url::default().launcher;
 
@@ -134,22 +141,34 @@ fn deserialize_launcher<'a, D>(deserializer: D) -> ::std::result::Result<Option<
     let val = match serde_yaml::Value::deserialize(deserializer) {
         Ok(val) => val,
         Err(err) => {
-            error!("Problem with config: {}; using {}", err, default.clone().unwrap().program());
+            error!(
+                "Problem with config: {}; using {}",
+                err,
+                default.clone().unwrap().program()
+            );
             return Ok(default);
-        },
+        }
     };
 
     // Accept `None` to disable the launcher
-    if val.as_str().filter(|v| v.to_lowercase() == "none").is_some() {
+    if val
+        .as_str()
+        .filter(|v| v.to_lowercase() == "none")
+        .is_some()
+    {
         return Ok(None);
     }
 
     match <Option<CommandWrapper>>::deserialize(val) {
         Ok(launcher) => Ok(launcher),
         Err(err) => {
-            error!("Problem with config: {}; using {}", err, default.clone().unwrap().program());
+            error!(
+                "Problem with config: {}; using {}",
+                err,
+                default.clone().unwrap().program()
+            );
             Ok(default)
-        },
+        }
     }
 }
 
@@ -168,7 +187,8 @@ impl Default for Url {
 }
 
 fn deserialize_modifiers<'a, D>(deserializer: D) -> ::std::result::Result<ModifiersState, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     ModsWrapper::deserialize(deserializer).map(ModsWrapper::into_inner)
 }
@@ -177,15 +197,15 @@ fn deserialize_modifiers<'a, D>(deserializer: D) -> ::std::result::Result<Modifi
 /// Penner's Easing Functions.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum VisualBellAnimation {
-    Ease,          // CSS
-    EaseOut,       // CSS
-    EaseOutSine,   // Penner
-    EaseOutQuad,   // Penner
-    EaseOutCubic,  // Penner
-    EaseOutQuart,  // Penner
-    EaseOutQuint,  // Penner
-    EaseOutExpo,   // Penner
-    EaseOutCirc,   // Penner
+    Ease,         // CSS
+    EaseOut,      // CSS
+    EaseOutSine,  // Penner
+    EaseOutQuad,  // Penner
+    EaseOutCubic, // Penner
+    EaseOutQuart, // Penner
+    EaseOutQuint, // Penner
+    EaseOutExpo,  // Penner
+    EaseOutCirc,  // Penner
     Linear,
 }
 
@@ -222,7 +242,11 @@ impl Default for VisualBellConfig {
 }
 
 fn default_visual_bell_color() -> Rgb {
-    Rgb { r: 255, g: 255, b: 255 }
+    Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    }
 }
 
 impl VisualBellConfig {
@@ -255,7 +279,8 @@ pub struct Shell<'a> {
 
 impl<'a> Shell<'a> {
     pub fn new<S>(program: S) -> Shell<'a>
-        where S: Into<Cow<'a, str>>
+    where
+        S: Into<Cow<'a, str>>,
     {
         Shell {
             program: program.into(),
@@ -264,7 +289,8 @@ impl<'a> Shell<'a> {
     }
 
     pub fn new_with_args<S>(program: S, args: Vec<String>) -> Shell<'a>
-        where S: Into<Cow<'a, str>>
+    where
+        S: Into<Cow<'a, str>>,
     {
         Shell {
             program: program.into(),
@@ -332,9 +358,9 @@ impl Default for Decorations {
 
 impl<'de> Deserialize<'de> for Decorations {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Decorations, D::Error>
-        where D: de::Deserializer<'de>
+    where
+        D: de::Deserializer<'de>,
     {
-
         struct DecorationsVisitor;
 
         impl<'de> Visitor<'de> for DecorationsVisitor {
@@ -346,7 +372,8 @@ impl<'de> Deserialize<'de> for Decorations {
 
             #[cfg(target_os = "macos")]
             fn visit_str<E>(self, value: &str) -> ::std::result::Result<Decorations, E>
-                where E: de::Error
+            where
+                E: de::Error,
             {
                 match value.to_lowercase().as_str() {
                     "transparent" => Ok(Decorations::Transparent),
@@ -354,17 +381,21 @@ impl<'de> Deserialize<'de> for Decorations {
                     "none" => Ok(Decorations::None),
                     "full" => Ok(Decorations::Full),
                     "true" => {
-                        error!("Deprecated decorations boolean value, \
-                                   use one of transparent|buttonless|none|full instead; \
-                                   falling back to \"full\"");
+                        error!(
+                            "Deprecated decorations boolean value, \
+                             use one of transparent|buttonless|none|full instead; \
+                             falling back to \"full\""
+                        );
                         Ok(Decorations::Full)
-                    },
+                    }
                     "false" => {
-                        error!("Deprecated decorations boolean value, \
-                                   use one of transparent|buttonless|none|full instead; \
-                                   falling back to \"none\"");
+                        error!(
+                            "Deprecated decorations boolean value, \
+                             use one of transparent|buttonless|none|full instead; \
+                             falling back to \"none\""
+                        );
                         Ok(Decorations::None)
-                    },
+                    }
                     _ => {
                         error!("Invalid decorations value: {}; using default value", value);
                         Ok(Decorations::Full)
@@ -374,27 +405,35 @@ impl<'de> Deserialize<'de> for Decorations {
 
             #[cfg(not(target_os = "macos"))]
             fn visit_str<E>(self, value: &str) -> ::std::result::Result<Decorations, E>
-                where E: de::Error
+            where
+                E: de::Error,
             {
                 match value.to_lowercase().as_str() {
                     "none" => Ok(Decorations::None),
                     "full" => Ok(Decorations::Full),
                     "true" => {
-                        error!("Deprecated decorations boolean value, \
-                                   use one of none|full instead; \
-                                   falling back to \"full\"");
+                        error!(
+                            "Deprecated decorations boolean value, \
+                             use one of none|full instead; \
+                             falling back to \"full\""
+                        );
                         Ok(Decorations::Full)
-                    },
+                    }
                     "false" => {
-                        error!("Deprecated decorations boolean value, \
-                                   use one of none|full instead; \
-                                   falling back to \"none\"");
+                        error!(
+                            "Deprecated decorations boolean value, \
+                             use one of none|full instead; \
+                             falling back to \"none\""
+                        );
                         Ok(Decorations::None)
-                    },
+                    }
                     "transparent" | "buttonless" => {
-                        error!("macOS-only decorations value: {}; using default value", value);
+                        error!(
+                            "macOS-only decorations value: {}; using default value",
+                            value
+                        );
                         Ok(Decorations::Full)
-                    },
+                    }
                     _ => {
                         error!("Invalid decorations value: {}; using default value", value);
                         Ok(Decorations::Full)
@@ -437,7 +476,7 @@ pub struct WindowConfig {
 
 impl Default for WindowConfig {
     fn default() -> Self {
-        WindowConfig{
+        WindowConfig {
             dimensions: Default::default(),
             position: Default::default(),
             padding: default_padding(),
@@ -453,14 +492,15 @@ fn default_padding() -> Delta<u8> {
 }
 
 fn deserialize_padding<'a, D>(deserializer: D) -> ::std::result::Result<Delta<u8>, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match Delta::deserialize(deserializer) {
         Ok(delta) => Ok(delta),
         Err(err) => {
             error!("Problem with config: {}; using default value", err);
             Ok(default_padding())
-        },
+        }
     }
 }
 
@@ -498,7 +538,10 @@ pub struct Config {
     render_timer: bool,
 
     /// Should draw bold text with brighter colors instead of bold font
-    #[serde(default = "default_true_bool", deserialize_with = "deserialize_true_bool")]
+    #[serde(
+        default = "default_true_bool",
+        deserialize_with = "deserialize_true_bool"
+    )]
     draw_bold_text_with_bright_colors: bool,
 
     #[serde(default, deserialize_with = "failure_default")]
@@ -513,11 +556,17 @@ pub struct Config {
     window: WindowConfig,
 
     /// Keybindings
-    #[serde(default="default_key_bindings", deserialize_with = "deserialize_key_bindings")]
+    #[serde(
+        default = "default_key_bindings",
+        deserialize_with = "deserialize_key_bindings"
+    )]
     key_bindings: Vec<KeyBinding>,
 
     /// Bindings for the mouse
-    #[serde(default="default_mouse_bindings", deserialize_with = "deserialize_mouse_bindings")]
+    #[serde(
+        default = "default_mouse_bindings",
+        deserialize_with = "deserialize_mouse_bindings"
+    )]
     mouse_bindings: Vec<MouseBinding>,
 
     #[serde(default, deserialize_with = "failure_default")]
@@ -539,15 +588,24 @@ pub struct Config {
     visual_bell: VisualBellConfig,
 
     /// Use dynamic title
-    #[serde(default = "default_true_bool", deserialize_with = "deserialize_true_bool")]
+    #[serde(
+        default = "default_true_bool",
+        deserialize_with = "deserialize_true_bool"
+    )]
     dynamic_title: bool,
 
     /// Live config reload
-    #[serde(default = "default_true_bool", deserialize_with = "deserialize_true_bool")]
+    #[serde(
+        default = "default_true_bool",
+        deserialize_with = "deserialize_true_bool"
+    )]
     live_config_reload: bool,
 
     /// Number of spaces in one tab
-    #[serde(default = "default_tabspaces", deserialize_with = "deserialize_tabspaces")]
+    #[serde(
+        default = "default_tabspaces",
+        deserialize_with = "deserialize_tabspaces"
+    )]
     tabspaces: usize,
 
     /// How much scrolling history to keep
@@ -569,7 +627,10 @@ pub struct Config {
     enable_experimental_conpty_backend: bool,
 
     /// Send escape sequences using the alt key.
-    #[serde(default = "default_true_bool", deserialize_with = "deserialize_true_bool")]
+    #[serde(
+        default = "default_true_bool",
+        deserialize_with = "deserialize_true_bool"
+    )]
     alt_send_esc: bool,
 
     // TODO: DEPRECATED
@@ -590,8 +651,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        serde_yaml::from_str(DEFAULT_ALACRITTY_CONFIG)
-            .expect("default config is invalid")
+        serde_yaml::from_str(DEFAULT_ALACRITTY_CONFIG).expect("default config is invalid")
     }
 }
 
@@ -603,24 +663,28 @@ fn default_mouse_bindings() -> Vec<MouseBinding> {
     bindings::default_mouse_bindings()
 }
 
-fn deserialize_key_bindings<'a, D>(deserializer: D)
-    -> ::std::result::Result<Vec<KeyBinding>, D::Error>
+fn deserialize_key_bindings<'a, D>(
+    deserializer: D,
+) -> ::std::result::Result<Vec<KeyBinding>, D::Error>
 where
     D: de::Deserializer<'a>,
 {
     deserialize_bindings(deserializer, bindings::default_key_bindings())
 }
 
-fn deserialize_mouse_bindings<'a, D>(deserializer: D)
-    -> ::std::result::Result<Vec<MouseBinding>, D::Error>
+fn deserialize_mouse_bindings<'a, D>(
+    deserializer: D,
+) -> ::std::result::Result<Vec<MouseBinding>, D::Error>
 where
     D: de::Deserializer<'a>,
 {
     deserialize_bindings(deserializer, bindings::default_mouse_bindings())
 }
 
-fn deserialize_bindings<'a, D, T>(deserializer: D, mut default: Vec<Binding<T>>)
-    -> ::std::result::Result<Vec<Binding<T>>, D::Error>
+fn deserialize_bindings<'a, D, T>(
+    deserializer: D,
+    mut default: Vec<Binding<T>>,
+) -> ::std::result::Result<Vec<Binding<T>>, D::Error>
 where
     D: de::Deserializer<'a>,
     T: Copy + Eq + std::hash::Hash + std::fmt::Debug,
@@ -638,8 +702,9 @@ where
 }
 
 fn failure_default_vec<'a, D, T>(deserializer: D) -> ::std::result::Result<Vec<T>, D::Error>
-    where D: de::Deserializer<'a>,
-          T: Deserialize<'a>
+where
+    D: de::Deserializer<'a>,
+    T: Deserialize<'a>,
 {
     // Deserialize as generic vector
     let vec = match Vec::<serde_yaml::Value>::deserialize(deserializer) {
@@ -647,7 +712,7 @@ fn failure_default_vec<'a, D, T>(deserializer: D) -> ::std::result::Result<Vec<T
         Err(err) => {
             error!("Problem with config: {}; using empty vector", err);
             return Ok(Vec::new());
-        },
+        }
     };
 
     // Move to lossy vector
@@ -657,7 +722,7 @@ fn failure_default_vec<'a, D, T>(deserializer: D) -> ::std::result::Result<Vec<T
             Ok(binding) => bindings.push(binding),
             Err(err) => {
                 error!("Problem with config: {}; skipping value", err);
-            },
+            }
         }
     }
 
@@ -669,26 +734,28 @@ fn default_tabspaces() -> usize {
 }
 
 fn deserialize_tabspaces<'a, D>(deserializer: D) -> ::std::result::Result<usize, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match usize::deserialize(deserializer) {
         Ok(value) => Ok(value),
         Err(err) => {
             error!("Problem with config: {}; using 8", err);
             Ok(default_tabspaces())
-        },
+        }
     }
 }
 
 fn deserialize_true_bool<'a, D>(deserializer: D) -> ::std::result::Result<bool, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match bool::deserialize(deserializer) {
         Ok(value) => Ok(value),
         Err(err) => {
             error!("Problem with config: {}; using true", err);
             Ok(true)
-        },
+        }
     }
 }
 
@@ -696,17 +763,17 @@ fn default_true_bool() -> bool {
     true
 }
 
-fn failure_default<'a, D, T>(deserializer: D)
-    -> ::std::result::Result<T, D::Error>
-    where D: de::Deserializer<'a>,
-          T: Deserialize<'a> + Default
+fn failure_default<'a, D, T>(deserializer: D) -> ::std::result::Result<T, D::Error>
+where
+    D: de::Deserializer<'a>,
+    T: Deserialize<'a> + Default,
 {
     match T::deserialize(deserializer) {
         Ok(value) => Ok(value),
         Err(err) => {
             error!("Problem with config: {}; using default value", err);
             Ok(T::default())
-        },
+        }
     }
 }
 
@@ -745,7 +812,8 @@ fn default_scrolling_multiplier() -> u8 {
 }
 
 fn deserialize_scrolling_history<'a, D>(deserializer: D) -> ::std::result::Result<u32, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match u32::deserialize(deserializer) {
         Ok(lines) => {
@@ -759,23 +827,24 @@ fn deserialize_scrolling_history<'a, D>(deserializer: D) -> ::std::result::Resul
             } else {
                 Ok(lines)
             }
-        },
+        }
         Err(err) => {
             error!("Problem with config: {}; using default value", err);
             Ok(default_scrolling_history())
-        },
+        }
     }
 }
 
 fn deserialize_scrolling_multiplier<'a, D>(deserializer: D) -> ::std::result::Result<u8, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match u8::deserialize(deserializer) {
         Ok(lines) => Ok(lines),
         Err(err) => {
             error!("Problem with config: {}; using default value", err);
             Ok(default_scrolling_multiplier())
-        },
+        }
     }
 }
 
@@ -794,7 +863,8 @@ impl ModsWrapper {
 
 impl<'a> de::Deserialize<'a> for ModsWrapper {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
-        where D: de::Deserializer<'a>
+    where
+        D: de::Deserializer<'a>,
     {
         struct ModsVisitor;
 
@@ -806,7 +876,8 @@ impl<'a> de::Deserialize<'a> for ModsWrapper {
             }
 
             fn visit_str<E>(self, value: &str) -> ::std::result::Result<ModsWrapper, E>
-                where E: de::Error,
+            where
+                E: de::Error,
             {
                 let mut res = ModifiersState::default();
                 for modifier in value.split('|') {
@@ -838,7 +909,8 @@ impl ActionWrapper {
 
 impl<'a> de::Deserialize<'a> for ActionWrapper {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
-        where D: de::Deserializer<'a>
+    where
+        D: de::Deserializer<'a>,
     {
         struct ActionVisitor;
 
@@ -846,14 +918,17 @@ impl<'a> de::Deserialize<'a> for ActionWrapper {
             type Value = ActionWrapper;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("Paste, Copy, PasteSelection, IncreaseFontSize, DecreaseFontSize, \
-                            ResetFontSize, ScrollPageUp, ScrollPageDown, ScrollToTop, \
-                            ScrollToBottom, ClearHistory, Hide, ClearLogNotice, SpawnNewInstance, \
-                            None or Quit")
+                f.write_str(
+                    "Paste, Copy, PasteSelection, IncreaseFontSize, DecreaseFontSize, \
+                     ResetFontSize, ScrollPageUp, ScrollPageDown, ScrollToTop, \
+                     ScrollToBottom, ClearHistory, Hide, ClearLogNotice, SpawnNewInstance, \
+                     None or Quit",
+                )
             }
 
             fn visit_str<E>(self, value: &str) -> ::std::result::Result<ActionWrapper, E>
-                where E: de::Error,
+            where
+                E: de::Error,
             {
                 Ok(ActionWrapper(match value {
                     "Paste" => Action::Paste,
@@ -915,8 +990,9 @@ struct ModeWrapper {
 }
 
 impl<'a> de::Deserialize<'a> for ModeWrapper {
-    fn deserialize<D>(deserializer:  D) -> ::std::result::Result<Self, D::Error>
-        where D: de::Deserializer<'a>
+    fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'a>,
     {
         struct ModeVisitor;
 
@@ -928,11 +1004,12 @@ impl<'a> de::Deserialize<'a> for ModeWrapper {
             }
 
             fn visit_str<E>(self, value: &str) -> ::std::result::Result<ModeWrapper, E>
-                where E: de::Error,
+            where
+                E: de::Error,
             {
                 let mut res = ModeWrapper {
                     mode: TermMode::empty(),
-                    not_mode: TermMode::empty()
+                    not_mode: TermMode::empty(),
                 };
 
                 for modifier in value.split('|') {
@@ -964,7 +1041,8 @@ impl MouseButton {
 
 impl<'a> de::Deserialize<'a> for MouseButton {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
-        where D: de::Deserializer<'a>
+    where
+        D: de::Deserializer<'a>,
     {
         struct MouseButtonVisitor;
 
@@ -976,7 +1054,8 @@ impl<'a> de::Deserialize<'a> for MouseButton {
             }
 
             fn visit_str<E>(self, value: &str) -> ::std::result::Result<MouseButton, E>
-                where E: de::Error,
+            where
+                E: de::Error,
             {
                 match value {
                     "Left" => Ok(MouseButton(::glutin::MouseButton::Left)),
@@ -1041,7 +1120,8 @@ impl RawBinding {
 
 impl<'a> de::Deserialize<'a> for RawBinding {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
-        where D: de::Deserializer<'a>
+    where
+        D: de::Deserializer<'a>,
     {
         enum Field {
             Key,
@@ -1055,13 +1135,13 @@ impl<'a> de::Deserialize<'a> for RawBinding {
 
         impl<'a> de::Deserialize<'a> for Field {
             fn deserialize<D>(deserializer: D) -> ::std::result::Result<Field, D::Error>
-                where D: de::Deserializer<'a>
+            where
+                D: de::Deserializer<'a>,
             {
                 struct FieldVisitor;
 
-                static FIELDS: &'static [&'static str] = &[
-                        "key", "mods", "mode", "action", "chars", "mouse", "command",
-                ];
+                static FIELDS: &'static [&'static str] =
+                    &["key", "mods", "mode", "action", "chars", "mouse", "command"];
 
                 impl<'a> Visitor<'a> for FieldVisitor {
                     type Value = Field;
@@ -1071,7 +1151,8 @@ impl<'a> de::Deserialize<'a> for RawBinding {
                     }
 
                     fn visit_str<E>(self, value: &str) -> ::std::result::Result<Field, E>
-                        where E: de::Error,
+                    where
+                        E: de::Error,
                     {
                         match value {
                             "key" => Ok(Field::Key),
@@ -1098,11 +1179,9 @@ impl<'a> de::Deserialize<'a> for RawBinding {
                 f.write_str("binding specification")
             }
 
-            fn visit_map<V>(
-                self,
-                mut map: V
-            ) -> ::std::result::Result<RawBinding, V::Error>
-                where V: MapAccess<'a>,
+            fn visit_map<V>(self, mut map: V) -> ::std::result::Result<RawBinding, V::Error>
+            where
+                V: MapAccess<'a>,
             {
                 let mut mods: Option<ModifiersState> = None;
                 let mut key: Option<Key> = None;
@@ -1133,18 +1212,17 @@ impl<'a> de::Deserialize<'a> for RawBinding {
                                 }
                                 key = Some(Key::Scancode(scancode as u32));
                             } else {
-                                let k = Key::deserialize(val)
-                                    .map_err(V::Error::custom)?;
+                                let k = Key::deserialize(val).map_err(V::Error::custom)?;
                                 key = Some(k);
                             }
-                        },
+                        }
                         Field::Mods => {
                             if mods.is_some() {
                                 return Err(<V::Error as Error>::duplicate_field("mods"));
                             }
 
                             mods = Some(map.next_value::<ModsWrapper>()?.into_inner());
-                        },
+                        }
                         Field::Mode => {
                             if mode.is_some() {
                                 return Err(<V::Error as Error>::duplicate_field("mode"));
@@ -1153,53 +1231,55 @@ impl<'a> de::Deserialize<'a> for RawBinding {
                             let mode_deserializer = map.next_value::<ModeWrapper>()?;
                             mode = Some(mode_deserializer.mode);
                             not_mode = Some(mode_deserializer.not_mode);
-                        },
+                        }
                         Field::Action => {
                             if action.is_some() {
                                 return Err(<V::Error as Error>::duplicate_field("action"));
                             }
 
                             action = Some(map.next_value::<ActionWrapper>()?.into_inner());
-                        },
+                        }
                         Field::Chars => {
                             if chars.is_some() {
                                 return Err(<V::Error as Error>::duplicate_field("chars"));
                             }
 
                             chars = Some(map.next_value()?);
-                        },
+                        }
                         Field::Mouse => {
                             if chars.is_some() {
                                 return Err(<V::Error as Error>::duplicate_field("mouse"));
                             }
 
                             mouse = Some(map.next_value::<MouseButton>()?.into_inner());
-                        },
+                        }
                         Field::Command => {
                             if command.is_some() {
                                 return Err(<V::Error as Error>::duplicate_field("command"));
                             }
 
                             command = Some(map.next_value::<CommandWrapper>()?);
-                        },
+                        }
                     }
                 }
 
                 let action = match (action, chars, command) {
                     (Some(action), None, None) => action,
                     (None, Some(chars), None) => Action::Esc(chars),
-                    (None, None, Some(cmd)) => {
-                        match cmd {
-                            CommandWrapper::Just(program) => {
-                                Action::Command(program, vec![])
-                            },
-                            CommandWrapper::WithArgs { program, args } => {
-                                Action::Command(program, args)
-                            },
+                    (None, None, Some(cmd)) => match cmd {
+                        CommandWrapper::Just(program) => Action::Command(program, vec![]),
+                        CommandWrapper::WithArgs { program, args } => {
+                            Action::Command(program, args)
                         }
                     },
-                    (None, None, None) => return Err(V::Error::custom("must specify chars, action or command")),
-                    _ => return Err(V::Error::custom("must specify only chars, action or command")),
+                    (None, None, None) => {
+                        return Err(V::Error::custom("must specify chars, action or command"))
+                    }
+                    _ => {
+                        return Err(V::Error::custom(
+                            "must specify only chars, action or command",
+                        ))
+                    }
                 };
 
                 let mode = mode.unwrap_or_else(TermMode::empty);
@@ -1221,18 +1301,16 @@ impl<'a> de::Deserialize<'a> for RawBinding {
             }
         }
 
-        const FIELDS: &[&str] = &[
-            "key", "mods", "mode", "action", "chars", "mouse", "command",
-        ];
+        const FIELDS: &[&str] = &["key", "mods", "mode", "action", "chars", "mouse", "command"];
 
         deserializer.deserialize_struct("RawBinding", FIELDS, RawBindingVisitor)
     }
 }
 
-
 impl<'a> de::Deserialize<'a> for Alpha {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
-        where D: de::Deserializer<'a>
+    where
+        D: de::Deserializer<'a>,
     {
         let value = f32::deserialize(deserializer)?;
         Ok(Alpha::new(value))
@@ -1241,21 +1319,23 @@ impl<'a> de::Deserialize<'a> for Alpha {
 
 impl<'a> de::Deserialize<'a> for MouseBinding {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
-        where D: de::Deserializer<'a>
+    where
+        D: de::Deserializer<'a>,
     {
         let raw = RawBinding::deserialize(deserializer)?;
         raw.into_mouse_binding()
-           .map_err(|_| D::Error::custom("expected mouse binding"))
+            .map_err(|_| D::Error::custom("expected mouse binding"))
     }
 }
 
 impl<'a> de::Deserialize<'a> for KeyBinding {
     fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
-        where D: de::Deserializer<'a>
+    where
+        D: de::Deserializer<'a>,
     {
         let raw = RawBinding::deserialize(deserializer)?;
         raw.into_key_binding()
-           .map_err(|_| D::Error::custom("expected key binding"))
+            .map_err(|_| D::Error::custom("expected key binding"))
     }
 }
 
@@ -1313,51 +1393,117 @@ impl Default for Colors {
 
 fn default_normal_colors() -> AnsiColors {
     AnsiColors {
-        black: Rgb {r: 0x00, g: 0x00, b: 0x00},
-        red: Rgb {r: 0xd5, g: 0x4e, b: 0x53},
-        green: Rgb {r: 0xb9, g: 0xca, b: 0x4a},
-        yellow: Rgb {r: 0xe6, g: 0xc5, b: 0x47},
-        blue: Rgb {r: 0x7a, g: 0xa6, b: 0xda},
-        magenta: Rgb {r: 0xc3, g: 0x97, b: 0xd8},
-        cyan: Rgb {r: 0x70, g: 0xc0, b: 0xba},
-        white: Rgb {r: 0xea, g: 0xea, b: 0xea},
+        black: Rgb {
+            r: 0x00,
+            g: 0x00,
+            b: 0x00,
+        },
+        red: Rgb {
+            r: 0xd5,
+            g: 0x4e,
+            b: 0x53,
+        },
+        green: Rgb {
+            r: 0xb9,
+            g: 0xca,
+            b: 0x4a,
+        },
+        yellow: Rgb {
+            r: 0xe6,
+            g: 0xc5,
+            b: 0x47,
+        },
+        blue: Rgb {
+            r: 0x7a,
+            g: 0xa6,
+            b: 0xda,
+        },
+        magenta: Rgb {
+            r: 0xc3,
+            g: 0x97,
+            b: 0xd8,
+        },
+        cyan: Rgb {
+            r: 0x70,
+            g: 0xc0,
+            b: 0xba,
+        },
+        white: Rgb {
+            r: 0xea,
+            g: 0xea,
+            b: 0xea,
+        },
     }
 }
 
 fn default_bright_colors() -> AnsiColors {
     AnsiColors {
-        black: Rgb {r: 0x66, g: 0x66, b: 0x66},
-        red: Rgb {r: 0xff, g: 0x33, b: 0x34},
-        green: Rgb {r: 0x9e, g: 0xc4, b: 0x00},
-        yellow: Rgb {r: 0xe7, g: 0xc5, b: 0x47},
-        blue: Rgb {r: 0x7a, g: 0xa6, b: 0xda},
-        magenta: Rgb {r: 0xb7, g: 0x7e, b: 0xe0},
-        cyan: Rgb {r: 0x54, g: 0xce, b: 0xd6},
-        white: Rgb {r: 0xff, g: 0xff, b: 0xff},
+        black: Rgb {
+            r: 0x66,
+            g: 0x66,
+            b: 0x66,
+        },
+        red: Rgb {
+            r: 0xff,
+            g: 0x33,
+            b: 0x34,
+        },
+        green: Rgb {
+            r: 0x9e,
+            g: 0xc4,
+            b: 0x00,
+        },
+        yellow: Rgb {
+            r: 0xe7,
+            g: 0xc5,
+            b: 0x47,
+        },
+        blue: Rgb {
+            r: 0x7a,
+            g: 0xa6,
+            b: 0xda,
+        },
+        magenta: Rgb {
+            r: 0xb7,
+            g: 0x7e,
+            b: 0xe0,
+        },
+        cyan: Rgb {
+            r: 0x54,
+            g: 0xce,
+            b: 0xd6,
+        },
+        white: Rgb {
+            r: 0xff,
+            g: 0xff,
+            b: 0xff,
+        },
     }
 }
 
 fn deserialize_normal_colors<'a, D>(deserializer: D) -> ::std::result::Result<AnsiColors, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match AnsiColors::deserialize(deserializer) {
         Ok(escape_chars) => Ok(escape_chars),
         Err(err) => {
             error!("Problem with config: {}; using default value", err);
             Ok(default_normal_colors())
-        },
+        }
     }
 }
 
 fn deserialize_bright_colors<'a, D>(deserializer: D) -> ::std::result::Result<AnsiColors, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match AnsiColors::deserialize(deserializer) {
         Ok(escape_chars) => Ok(escape_chars),
         Err(err) => {
             error!("Problem with config: {}; using default value", err);
             Ok(default_bright_colors())
-        },
+        }
     }
 }
 
@@ -1370,7 +1516,8 @@ pub struct IndexedColor {
 }
 
 fn deserialize_color_index<'a, D>(deserializer: D) -> ::std::result::Result<u8, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     match u8::deserialize(deserializer) {
         Ok(index) => {
@@ -1387,13 +1534,13 @@ fn deserialize_color_index<'a, D>(deserializer: D) -> ::std::result::Result<u8, 
             } else {
                 Ok(index)
             }
-        },
+        }
         Err(err) => {
             error!("Problem with config: {}; ignoring setting", err);
 
             // Return value out of range to ignore this color
             Ok(0)
-        },
+        }
     }
 }
 
@@ -1457,19 +1604,25 @@ impl Default for PrimaryColors {
     }
 }
 
-fn deserialize_optional_color<'a, D>(deserializer: D) -> ::std::result::Result<Option<Rgb>, D::Error>
-    where D: de::Deserializer<'a>
+fn deserialize_optional_color<'a, D>(
+    deserializer: D,
+) -> ::std::result::Result<Option<Rgb>, D::Error>
+where
+    D: de::Deserializer<'a>,
 {
     match Option::deserialize(deserializer) {
         Ok(Some(color)) => {
             let color: serde_yaml::Value = color;
             Ok(Some(rgb_from_hex(color).unwrap()))
-        },
+        }
         Ok(None) => Ok(None),
         Err(err) => {
-            error!("Problem with config: {}; using standard foreground color", err);
+            error!(
+                "Problem with config: {}; using standard foreground color",
+                err
+            );
             Ok(None)
-        },
+        }
     }
 }
 
@@ -1478,7 +1631,11 @@ fn default_background() -> Rgb {
 }
 
 fn default_foreground() -> Rgb {
-    Rgb { r: 0xea, g: 0xea, b: 0xea }
+    Rgb {
+        r: 0xea,
+        g: 0xea,
+        b: 0xea,
+    }
 }
 
 /// The 8-colors sections of config
@@ -1507,7 +1664,8 @@ pub struct AnsiColors {
 /// This is *not* the deserialize impl for Rgb since we want a symmetric
 /// serialize/deserialize impl for ref tests.
 fn rgb_from_hex<'a, D>(deserializer: D) -> ::std::result::Result<Rgb, D::Error>
-    where D: de::Deserializer<'a>
+where
+    D: de::Deserializer<'a>,
 {
     struct RgbVisitor;
 
@@ -1519,7 +1677,8 @@ fn rgb_from_hex<'a, D>(deserializer: D) -> ::std::result::Result<Rgb, D::Error>
         }
 
         fn visit_str<E>(self, value: &str) -> ::std::result::Result<Rgb, E>
-            where E: ::serde::de::Error
+        where
+            E: ::serde::de::Error,
         {
             Rgb::from_str(&value[..])
                 .map_err(|_| E::custom("failed to parse rgb; expected hex color like 0xff00ff"))
@@ -1533,8 +1692,12 @@ fn rgb_from_hex<'a, D>(deserializer: D) -> ::std::result::Result<Rgb, D::Error>
         Ok(rgb) => Ok(rgb),
         Err(err) => {
             error!("Problem with config: {}; using color #ff00ff", err);
-            Ok(Rgb { r: 255, g: 0, b: 255 })
-        },
+            Ok(Rgb {
+                r: 255,
+                g: 0,
+                b: 255,
+            })
+        }
     }
 }
 
@@ -1561,7 +1724,11 @@ impl FromStr for Rgb {
         }
 
         match chars.next() {
-            Some('0') => if chars.next() != Some('x') { return Err(()); },
+            Some('0') => {
+                if chars.next() != Some('x') {
+                    return Err(());
+                }
+            }
             Some('#') => (),
             _ => return Err(()),
         }
@@ -1596,10 +1763,12 @@ impl ::std::error::Error for Error {
 impl ::std::fmt::Display for Error {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match *self {
-            Error::NotFound | Error::Empty => write!(f, "{}", ::std::error::Error::description(self)),
+            Error::NotFound | Error::Empty => {
+                write!(f, "{}", ::std::error::Error::description(self))
+            }
             Error::ReadingEnvHome(ref err) => {
                 write!(f, "Couldn't read $HOME environment variable: {}", err)
-            },
+            }
             Error::Io(ref err) => write!(f, "Error reading config file: {}", err),
             Error::Yaml(ref err) => write!(f, "Problem with config: {}", err),
         }
@@ -1646,9 +1815,9 @@ impl Config {
             .ok()
             .and_then(|xdg| xdg.find_config_file("alacritty.yml"))
             .or_else(|| {
-                ::xdg::BaseDirectories::new().ok().and_then(|fallback| {
-                    fallback.find_config_file("alacritty.yml")
-                })
+                ::xdg::BaseDirectories::new()
+                    .ok()
+                    .and_then(|fallback| fallback.find_config_file("alacritty.yml"))
             })
             .or_else(|| {
                 if let Ok(home) = env::var("HOME") {
@@ -1671,10 +1840,8 @@ impl Config {
     // TODO: Remove old configuration location warning (Deprecated 03/12/2018)
     #[cfg(windows)]
     pub fn installed_config<'a>() -> Option<Cow<'a, Path>> {
-        let old = dirs::home_dir()
-            .map(|path| path.join("alacritty.yml"));
-        let new = dirs::config_dir()
-            .map(|path| path.join("alacritty\\alacritty.yml"));
+        let old = dirs::home_dir().map(|path| path.join("alacritty.yml"));
+        let new = dirs::config_dir().map(|path| path.join("alacritty\\alacritty.yml"));
 
         if let Some(old_path) = old.as_ref().filter(|old| old.exists()) {
             warn!(
@@ -1702,11 +1869,9 @@ impl Config {
 
     #[cfg(windows)]
     pub fn write_defaults() -> io::Result<Cow<'static, Path>> {
-        let mut path = dirs::config_dir()
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, "Couldn't find profile directory")
-            }
-        )?;
+        let mut path = dirs::config_dir().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "Couldn't find profile directory")
+        })?;
 
         path = path.join("alacritty/alacritty.yml");
 
@@ -1751,8 +1916,7 @@ impl Config {
     }
 
     pub fn padding(&self) -> &Delta<u8> {
-        self.padding.as_ref()
-            .unwrap_or(&self.window.padding)
+        self.padding.as_ref().unwrap_or(&self.window.padding)
     }
 
     #[inline]
@@ -1808,9 +1972,7 @@ impl Config {
     }
 
     pub fn path(&self) -> Option<&Path> {
-        self.config_path
-            .as_ref()
-            .map(PathBuf::as_path)
+        self.config_path.as_ref().map(PathBuf::as_path)
     }
 
     pub fn shell(&self) -> Option<&Shell<'_>> {
@@ -1824,7 +1986,8 @@ impl Config {
     /// Should hide mouse cursor when typing
     #[inline]
     pub fn hide_mouse_when_typing(&self) -> bool {
-        self.hide_cursor_when_typing.unwrap_or(self.mouse.hide_when_typing)
+        self.hide_cursor_when_typing
+            .unwrap_or(self.mouse.hide_when_typing)
     }
 
     /// Style of the cursor
@@ -1836,7 +1999,8 @@ impl Config {
     /// Use hollow block cursor when unfocused
     #[inline]
     pub fn unfocused_hollow_cursor(&self) -> bool {
-        self.unfocused_hollow_cursor.unwrap_or(self.cursor.unfocused_hollow)
+        self.unfocused_hollow_cursor
+            .unwrap_or(self.cursor.unfocused_hollow)
     }
 
     /// Live config reload
@@ -1859,13 +2023,19 @@ impl Config {
     /// Cursor foreground color
     #[inline]
     pub fn cursor_text_color(&self) -> Option<Color> {
-        self.colors.cursor.text.map(|_| Color::Named(NamedColor::CursorText))
+        self.colors
+            .cursor
+            .text
+            .map(|_| Color::Named(NamedColor::CursorText))
     }
 
     /// Cursor background color
     #[inline]
     pub fn cursor_cursor_color(&self) -> Option<Color> {
-        self.colors.cursor.cursor.map(|_| Color::Named(NamedColor::Cursor))
+        self.colors
+            .cursor
+            .cursor
+            .map(|_| Color::Named(NamedColor::Cursor))
     }
 
     /// Enable experimental conpty backend (Windows only)
@@ -1933,18 +2103,24 @@ impl Config {
 
     fn print_deprecation_warnings(&mut self) {
         if self.dimensions.is_some() {
-            warn!("Config dimensions is deprecated; \
-                  please use window.dimensions instead");
+            warn!(
+                "Config dimensions is deprecated; \
+                 please use window.dimensions instead"
+            );
         }
 
         if self.padding.is_some() {
-            warn!("Config padding is deprecated; \
-                  please use window.padding instead");
+            warn!(
+                "Config padding is deprecated; \
+                 please use window.padding instead"
+            );
         }
 
         if self.mouse.faux_scrollback_lines.is_some() {
-            warn!("Config mouse.faux_scrollback_lines is deprecated; \
-                  please use mouse.faux_scrolling_lines instead");
+            warn!(
+                "Config mouse.faux_scrollback_lines is deprecated; \
+                 please use mouse.faux_scrolling_lines instead"
+            );
         }
 
         if let Some(custom_cursor_colors) = self.custom_cursor_colors {
@@ -1957,18 +2133,24 @@ impl Config {
         }
 
         if self.cursor_style.is_some() {
-            warn!("Config cursor_style is deprecated; \
-                  please use cursor.style instead");
+            warn!(
+                "Config cursor_style is deprecated; \
+                 please use cursor.style instead"
+            );
         }
 
         if self.hide_cursor_when_typing.is_some() {
-            warn!("Config hide_cursor_when_typing is deprecated; \
-                  please use mouse.hide_when_typing instead");
+            warn!(
+                "Config hide_cursor_when_typing is deprecated; \
+                 please use mouse.hide_when_typing instead"
+            );
         }
 
         if self.unfocused_hollow_cursor.is_some() {
-            warn!("Config unfocused_hollow_cursor is deprecated; \
-                  please use cursor.unfocused_hollow instead");
+            warn!(
+                "Config unfocused_hollow_cursor is deprecated; \
+                 please use cursor.unfocused_hollow instead"
+            );
         }
     }
 }
@@ -1990,10 +2172,7 @@ pub struct Dimensions {
 
 impl Dimensions {
     pub fn new(columns: Column, lines: Line) -> Self {
-        Dimensions {
-            columns,
-            lines,
-        }
+        Dimensions { columns, lines }
     }
 
     /// Get lines
@@ -2021,14 +2200,16 @@ pub struct Delta<T: Default + PartialEq + Eq> {
     pub y: T,
 }
 
-trait DeserializeSize : Sized {
+trait DeserializeSize: Sized {
     fn deserialize<'a, D>(_: D) -> ::std::result::Result<Self, D::Error>
-        where D: serde::de::Deserializer<'a>;
+    where
+        D: serde::de::Deserializer<'a>;
 }
 
 impl DeserializeSize for Size {
     fn deserialize<'a, D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
-        where D: serde::de::Deserializer<'a>
+    where
+        D: serde::de::Deserializer<'a>,
     {
         use std::marker::PhantomData;
 
@@ -2037,7 +2218,8 @@ impl DeserializeSize for Size {
         }
 
         impl<'a, __D> Visitor<'a> for NumVisitor<__D>
-            where __D: serde::de::Deserializer<'a>
+        where
+            __D: serde::de::Deserializer<'a>,
         {
             type Value = f64;
 
@@ -2046,20 +2228,24 @@ impl DeserializeSize for Size {
             }
 
             fn visit_f64<E>(self, value: f64) -> ::std::result::Result<Self::Value, E>
-                where E: ::serde::de::Error
+            where
+                E: ::serde::de::Error,
             {
                 Ok(value)
             }
 
             fn visit_u64<E>(self, value: u64) -> ::std::result::Result<Self::Value, E>
-                where E: ::serde::de::Error
+            where
+                E: ::serde::de::Error,
             {
                 Ok(value as f64)
             }
         }
 
         let size = deserializer
-            .deserialize_any(NumVisitor::<D>{ _marker: PhantomData })
+            .deserialize_any(NumVisitor::<D> {
+                _marker: PhantomData,
+            })
             .map(|v| Size::new(v as _));
 
         // Use default font size as fallback
@@ -2067,9 +2253,13 @@ impl DeserializeSize for Size {
             Ok(size) => Ok(size),
             Err(err) => {
                 let size = default_font_size();
-                error!("Problem with config: {}; using size {}", err, size.as_f32_pts());
+                error!(
+                    "Problem with config: {}; using size {}",
+                    err,
+                    size.as_f32_pts()
+                );
                 Ok(size)
-            },
+            }
         }
     }
 }
@@ -2153,10 +2343,7 @@ impl Font {
 
     /// Get a font clone with a size modification
     pub fn with_size(self, size: Size) -> Font {
-        Font {
-            size,
-            .. self
-        }
+        Font { size, ..self }
     }
 
     // Get normal font description
@@ -2185,8 +2372,10 @@ where
 {
     // This is necessary in order to get serde to complete deserialization of the configuration
     let _ignored = bool::deserialize(deserializer);
-    error!("The scale_with_dpi setting has been removed, \
-            on X11 the WINIT_HIDPI_FACTOR environment variable can be used instead.");
+    error!(
+        "The scale_with_dpi setting has been removed, \
+         on X11 the WINIT_HIDPI_FACTOR environment variable can be used instead."
+    );
     Ok(None)
 }
 
@@ -2227,7 +2416,10 @@ pub struct SecondaryFontDescription {
 impl SecondaryFontDescription {
     pub fn desc(&self, fallback: &FontDescription) -> FontDescription {
         FontDescription {
-            family: self.family.clone().unwrap_or_else(|| fallback.family.clone()),
+            family: self
+                .family
+                .clone()
+                .unwrap_or_else(|| fallback.family.clone()),
             style: self.style.clone(),
         }
     }
@@ -2260,8 +2452,9 @@ impl Monitor {
     }
 
     pub fn new<H, P>(path: P, mut handler: H) -> Monitor
-        where H: OnConfigReload + Send + 'static,
-              P: Into<PathBuf>
+    where
+        H: OnConfigReload + Send + 'static,
+        P: Into<PathBuf>,
     {
         let path = path.into();
 
@@ -2271,26 +2464,25 @@ impl Monitor {
             _thread: crate::util::thread::spawn_named("config watcher", move || {
                 let (tx, rx) = mpsc::channel();
                 // The Duration argument is a debouncing period.
-                let mut watcher = watcher(tx, Duration::from_millis(10))
-                    .expect("Unable to spawn file watcher");
-                let config_path = ::std::fs::canonicalize(path)
-                    .expect("canonicalize config path");
+                let mut watcher =
+                    watcher(tx, Duration::from_millis(10)).expect("Unable to spawn file watcher");
+                let config_path = ::std::fs::canonicalize(path).expect("canonicalize config path");
 
                 // Get directory of config
                 let mut parent = config_path.clone();
                 parent.pop();
 
                 // Watch directory
-                watcher.watch(&parent, RecursiveMode::NonRecursive)
+                watcher
+                    .watch(&parent, RecursiveMode::NonRecursive)
                     .expect("watch alacritty.yml dir");
 
                 loop {
                     match rx.recv().expect("watcher event") {
                         DebouncedEvent::Rename(_, _) => continue,
                         DebouncedEvent::Write(path)
-                            | DebouncedEvent::Create(path)
-                            | DebouncedEvent::Chmod(path) =>
-                        {
+                        | DebouncedEvent::Create(path)
+                        | DebouncedEvent::Chmod(path) => {
                             if path != config_path {
                                 continue;
                             }
@@ -2645,13 +2837,13 @@ impl Key {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::Options;
     use super::{Config, DEFAULT_ALACRITTY_CONFIG};
+    use crate::cli::Options;
 
     #[test]
     fn parse_config() {
-        let config: Config = ::serde_yaml::from_str(DEFAULT_ALACRITTY_CONFIG)
-            .expect("deserialize config");
+        let config: Config =
+            ::serde_yaml::from_str(DEFAULT_ALACRITTY_CONFIG).expect("deserialize config");
 
         // Sanity check that mouse bindings are being parsed
         assert!(!config.mouse_bindings.is_empty());
@@ -2662,8 +2854,8 @@ mod tests {
 
     #[test]
     fn dynamic_title_ignoring_options_by_default() {
-        let config: Config = ::serde_yaml::from_str(DEFAULT_ALACRITTY_CONFIG)
-            .expect("deserialize config");
+        let config: Config =
+            ::serde_yaml::from_str(DEFAULT_ALACRITTY_CONFIG).expect("deserialize config");
         let old_dynamic_title = config.dynamic_title;
         let options = Options::default();
         let config = config.update_dynamic_title(&options);
@@ -2672,8 +2864,8 @@ mod tests {
 
     #[test]
     fn dynamic_title_overridden_by_options() {
-        let config: Config = ::serde_yaml::from_str(DEFAULT_ALACRITTY_CONFIG)
-            .expect("deserialize config");
+        let config: Config =
+            ::serde_yaml::from_str(DEFAULT_ALACRITTY_CONFIG).expect("deserialize config");
         let mut options = Options::default();
         options.title = Some("foo".to_owned());
         let config = config.update_dynamic_title(&options);

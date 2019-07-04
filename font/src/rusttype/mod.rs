@@ -61,12 +61,10 @@ impl crate::Rasterize for RustTypeRasterizer {
             .monospace();
 
         let fp = match desc.style {
-            Style::Specific(ref style) => {
-                match style.to_lowercase().as_str() {
-                    "italic" => fp.italic(),
-                    "bold" => fp.bold(),
-                    _ => fp,
-                }
+            Style::Specific(ref style) => match style.to_lowercase().as_str() {
+                "italic" => fp.italic(),
+                "bold" => fp.bold(),
+                _ => fp,
             },
             Style::Description { slant, weight } => {
                 let fp = match slant {
@@ -81,12 +79,15 @@ impl crate::Rasterize for RustTypeRasterizer {
                 }
             }
         };
-        self.fonts.push(FontCollection::from_bytes(
-            system_fonts::get(&fp.build())
-                .ok_or_else(|| Error::MissingFont(desc.clone()))?
-                .0,
-        ).into_font()
-            .ok_or(Error::UnsupportedFont)?);
+        self.fonts.push(
+            FontCollection::from_bytes(
+                system_fonts::get(&fp.build())
+                    .ok_or_else(|| Error::MissingFont(desc.clone()))?
+                    .0,
+            )
+            .into_font()
+            .ok_or(Error::UnsupportedFont)?,
+        );
         Ok(FontKey {
             token: (self.fonts.len() - 1) as u16,
         })
@@ -96,7 +97,10 @@ impl crate::Rasterize for RustTypeRasterizer {
         match glyph_key.c {
             super::UNDERLINE_CURSOR_CHAR => {
                 let metrics = self.metrics(glyph_key.font_key, glyph_key.size)?;
-                return super::get_underline_cursor_glyph(metrics.descent as i32, metrics.average_advance as i32);
+                return super::get_underline_cursor_glyph(
+                    metrics.descent as i32,
+                    metrics.average_advance as i32,
+                );
             }
             super::BEAM_CURSOR_CHAR => {
                 let metrics = self.metrics(glyph_key.font_key, glyph_key.size)?;
@@ -104,7 +108,7 @@ impl crate::Rasterize for RustTypeRasterizer {
                 return super::get_beam_cursor_glyph(
                     (metrics.line_height + f64::from(metrics.descent)).round() as i32,
                     metrics.line_height.round() as i32,
-                    metrics.average_advance.round() as i32
+                    metrics.average_advance.round() as i32,
                 );
             }
             super::BOX_CURSOR_CHAR => {
@@ -113,10 +117,10 @@ impl crate::Rasterize for RustTypeRasterizer {
                 return super::get_box_cursor_glyph(
                     (metrics.line_height + f64::from(metrics.descent)).round() as i32,
                     metrics.line_height.round() as i32,
-                    metrics.average_advance.round() as i32
+                    metrics.average_advance.round() as i32,
                 );
             }
-            _ => ()
+            _ => (),
         }
 
         let scaled_glyph = self.fonts[glyph_key.font_key.token as usize]

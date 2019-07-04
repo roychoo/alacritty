@@ -28,7 +28,7 @@ use crate::cli::Options;
 use crate::config::Config;
 use crate::display::OnResize;
 use crate::term::SizeInfo;
-use crate::tty::{EventedReadWrite, EventedPty};
+use crate::tty::{EventedPty, EventedReadWrite};
 
 mod conpty;
 mod winpty;
@@ -340,4 +340,4 @@ impl<'a> EventedReadWrite for Pty<'a> {
     }
 }
 
-impl<'a> EventedPty for Pty<'a> { }
+impl<'a> EventedPty for Pty<'a> {}

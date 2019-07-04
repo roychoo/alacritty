@@ -13,10 +13,14 @@
 // limitations under the License.
 //
 //! Alacritty - The GPU Enhanced Terminal
-#![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use, clippy::wrong_pub_self_convention)]
+#![deny(
+    clippy::all,
+    clippy::if_not_else,
+    clippy::enum_glob_use,
+    clippy::wrong_pub_self_convention
+)]
 #![cfg_attr(feature = "nightly", feature(core_intrinsics))]
 #![cfg_attr(all(test, feature = "bench"), feature(test))]
-
 // With the default subsystem, 'console', windows creates an additional console
 // window for the program.
 // This is silently ignored on non-windows systems.
@@ -29,12 +33,12 @@ use dirs;
 #[cfg(windows)]
 use winapi::um::wincon::{AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS};
 
-use log::{info, error};
+use log::{error, info};
 
 use std::error::Error;
-use std::sync::Arc;
-use std::io::{self, Write};
 use std::fs;
+use std::io::{self, Write};
+use std::sync::Arc;
 
 #[cfg(target_os = "macos")]
 use std::env;
@@ -42,19 +46,19 @@ use std::env;
 #[cfg(not(windows))]
 use std::os::unix::io::AsRawFd;
 
-#[cfg(target_os = "macos")]
-use alacritty::locale;
-use alacritty::{cli, event, die};
 use alacritty::config::{self, Config, Monitor};
 use alacritty::display::Display;
 use alacritty::event_loop::{self, EventLoop, Msg};
+#[cfg(target_os = "macos")]
+use alacritty::locale;
 use alacritty::logging;
+use alacritty::message_bar::MessageBuffer;
 use alacritty::panic;
 use alacritty::sync::FairMutex;
 use alacritty::term::Term;
 use alacritty::tty;
 use alacritty::util::fmt::Red;
-use alacritty::message_bar::MessageBuffer;
+use alacritty::{cli, die, event};
 
 fn main() {
     panic::attach_handler();
@@ -63,7 +67,9 @@ fn main() {
     // to the console of the parent process, so we do it explicitly. This fails
     // silently if the parent has no console.
     #[cfg(windows)]
-    unsafe { AttachConsole(ATTACH_PARENT_PROCESS); }
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
 
     // Load command line options
     let options = cli::Options::load();
@@ -77,7 +83,8 @@ fn main() {
 
     // Load configuration file
     // If the file is a command line argument, we won't write a generated default file
-    let config_path = options.config_path()
+    let config_path = options
+        .config_path()
         .or_else(Config::installed_config)
         .or_else(|| Config::write_defaults().ok())
         .map(|path| path.to_path_buf());
@@ -100,7 +107,10 @@ fn main() {
 
     // Run alacritty
     if let Err(err) = run(config, &options, message_buffer) {
-        die!("Alacritty encountered an unrecoverable error:\n\n\t{}\n", Red(err));
+        die!(
+            "Alacritty encountered an unrecoverable error:\n\n\t{}\n",
+            Red(err)
+        );
     }
 
     // Clean up logfile
@@ -223,7 +233,9 @@ fn run(
         // Handle config reloads
         if let Some(ref path) = config_monitor.as_ref().and_then(Monitor::pending) {
             // Clear old config messages from bar
-            terminal_lock.message_buffer_mut().remove_topic(config::SOURCE_FILE_PATH);
+            terminal_lock
+                .message_buffer_mut()
+                .remove_topic(config::SOURCE_FILE_PATH);
 
             if let Ok(new_config) = Config::reload_from(path) {
                 config = new_config.update_dynamic_title(options);
@@ -250,7 +262,12 @@ fn run(
             //
             // The second argument is a list of types that want to be notified
             // of display size changes.
-            display.handle_resize(&mut terminal_lock, &config, &mut resize_handle, &mut processor);
+            display.handle_resize(
+                &mut terminal_lock,
+                &config,
+                &mut resize_handle,
+                &mut processor,
+            );
 
             drop(terminal_lock);
 
@@ -268,7 +285,9 @@ fn run(
 
     // Without explicitly detaching the console cmd won't redraw it's prompt
     #[cfg(windows)]
-    unsafe { FreeConsole(); }
+    unsafe {
+        FreeConsole();
+    }
 
     info!("Goodbye");
 

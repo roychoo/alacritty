@@ -14,8 +14,8 @@
 use std::collections::HashMap;
 
 use crate::term::cell::Flags;
-use crate::term::{RenderableCell, SizeInfo};
 use crate::term::color::Rgb;
+use crate::term::{RenderableCell, SizeInfo};
 use font::Metrics;
 
 #[derive(Debug, Copy, Clone)]
@@ -28,7 +28,12 @@ pub struct Rect<T> {
 
 impl<T> Rect<T> {
     pub fn new(x: T, y: T, width: T, height: T) -> Self {
-        Rect { x, y, width, height }
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 }
 
@@ -61,15 +66,13 @@ impl<'a> Rects<'a> {
         // If there's still a line pending, draw it until the last cell
         for (flag, start_cell) in self.last_starts.iter_mut() {
             if let Some(start) = start_cell {
-                self.inner.push(
-                    create_rect(
-                        &start,
-                        &self.last_cell.unwrap(),
-                        *flag,
-                        &self.metrics,
-                        &self.size,
-                    )
-                );
+                self.inner.push(create_rect(
+                    &start,
+                    &self.last_cell.unwrap(),
+                    *flag,
+                    &self.metrics,
+                    &self.size,
+                ));
             }
         }
 
@@ -110,11 +113,13 @@ impl<'a> Rects<'a> {
                     }
                 }
                 // Check for new start of line
-                None => if cell.flags.contains(flag) {
-                    Some(*cell)
-                } else {
-                    None
-                },
+                None => {
+                    if cell.flags.contains(flag) {
+                        Some(*cell)
+                    } else {
+                        None
+                    }
+                }
             };
         }
 

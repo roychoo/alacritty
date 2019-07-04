@@ -22,17 +22,17 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use fnv::FnvHasher;
-use glutin::dpi::PhysicalSize;
 use font::{self, FontDesc, FontKey, GlyphKey, Rasterize, RasterizedGlyph, Rasterizer};
+use glutin::dpi::PhysicalSize;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 
-use crate::gl::types::*;
-use crate::gl;
-use crate::index::{Column, Line, RangeInclusive};
-use crate::term::color::Rgb;
 use crate::config::{self, Config, Delta};
-use crate::term::{self, cell, RenderableCell};
+use crate::gl;
+use crate::gl::types::*;
+use crate::index::{Column, Line, RangeInclusive};
 use crate::renderer::rects::{Rect, Rects};
+use crate::term::color::Rgb;
+use crate::term::{self, cell, RenderableCell};
 //use std::collections::HashMap;
 //use std::fs::File;
 //use std::hash::BuildHasherDefault;
@@ -211,7 +211,11 @@ impl GlyphCache {
         // Need to load at least one glyph for the face before calling metrics.
         // The glyph requested here ('m' at the time of writing) has no special
         // meaning.
-        rasterizer.get_glyph(GlyphKey { font_key: regular, c: 'm', size: font.size() })?;
+        rasterizer.get_glyph(GlyphKey {
+            font_key: regular,
+            c: 'm',
+            size: font.size(),
+        })?;
 
         let metrics = rasterizer.metrics(regular, font.size())?;
 
@@ -236,11 +240,14 @@ impl GlyphCache {
     fn load_glyphs_for_font<L: LoadGlyph>(&mut self, font: FontKey, loader: &mut L) {
         let size = self.font_size;
         for i in RangeInclusive::new(32u8, 128u8) {
-            self.get(GlyphKey {
-                font_key: font,
-                c: i as _,
-                size,
-            }, loader);
+            self.get(
+                GlyphKey {
+                    font_key: font,
+                    c: i as _,
+                    size,
+                },
+                loader,
+            );
         }
     }
 
@@ -252,7 +259,8 @@ impl GlyphCache {
         let size = font.size();
 
         // Load regular font
-        let regular_desc = Self::make_desc(&font.normal(), font::Slant::Normal, font::Weight::Normal);
+        let regular_desc =
+            Self::make_desc(&font.normal(), font::Slant::Normal, font::Weight::Normal);
 
         let regular = rasterizer.load_font(&regular_desc, size)?;
 
@@ -273,7 +281,8 @@ impl GlyphCache {
         let bold = load_or_regular(bold_desc);
 
         // Load italic font
-        let italic_desc = Self::make_desc(&font.italic(), font::Slant::Italic, font::Weight::Normal);
+        let italic_desc =
+            Self::make_desc(&font.italic(), font::Slant::Italic, font::Weight::Normal);
 
         let italic = load_or_regular(italic_desc);
 
@@ -300,28 +309,29 @@ impl GlyphCache {
     }
 
     pub fn get<'a, L>(&'a mut self, glyph_key: GlyphKey, loader: &mut L) -> &'a Glyph
-        where L: LoadGlyph
+    where
+        L: LoadGlyph,
     {
         let glyph_offset = self.glyph_offset;
         let rasterizer = &mut self.rasterizer;
         let metrics = &self.metrics;
-        self.cache
-            .entry(glyph_key)
-            .or_insert_with(|| {
-                let mut rasterized = rasterizer.get_glyph(glyph_key)
-                    .unwrap_or_else(|_| Default::default());
+        self.cache.entry(glyph_key).or_insert_with(|| {
+            let mut rasterized = rasterizer
+                .get_glyph(glyph_key)
+                .unwrap_or_else(|_| Default::default());
 
-                rasterized.left += i32::from(glyph_offset.x);
-                rasterized.top += i32::from(glyph_offset.y);
-                rasterized.top -= metrics.descent as i32;
+            rasterized.left += i32::from(glyph_offset.x);
+            rasterized.top += i32::from(glyph_offset.y);
+            rasterized.top -= metrics.descent as i32;
 
-                loader.load_glyph(&rasterized)
+            loader.load_glyph(&rasterized)
         })
     }
 
     #[cfg(feature = "hb-ft")]
     pub fn get_raw<'a, L>(&'a mut self, glyph_key: GlyphKey, loader: &mut L, glyph_i: u32) -> Glyph
-        where L: LoadGlyph
+    where
+        L: LoadGlyph,
     {
         let glyph_offset = self.glyph_offset;
         let rasterizer = &mut self.rasterizer;
@@ -336,17 +346,18 @@ impl GlyphCache {
             .entry(fixed_glyph_key)
             .or_insert_with(|| {
             */
-                let mut rasterized = rasterizer.get_glyph_raw(glyph_key, glyph_i)
-                    .unwrap_or_else(|_| Default::default());
+        let mut rasterized = rasterizer
+            .get_glyph_raw(glyph_key, glyph_i)
+            .unwrap_or_else(|_| Default::default());
 
-                rasterized.left += i32::from(glyph_offset.x);
-                rasterized.top += i32::from(glyph_offset.y);
-                rasterized.top -= metrics.descent as i32;
+        rasterized.left += i32::from(glyph_offset.x);
+        rasterized.top += i32::from(glyph_offset.y);
+        rasterized.top -= metrics.descent as i32;
 
-                loader.load_glyph(&rasterized)
-                    /*
-            })
-            */
+        loader.load_glyph(&rasterized)
+        /*
+        })
+        */
     }
 
     pub fn update_font_size<L: LoadGlyph>(
@@ -354,7 +365,7 @@ impl GlyphCache {
         font: &config::Font,
         size: font::Size,
         dpr: f64,
-        loader: &mut L
+        loader: &mut L,
     ) -> Result<(), font::Error> {
         // Clear currently cached data in both GL and the registry
         loader.clear();
@@ -367,7 +378,11 @@ impl GlyphCache {
         let font = font.to_owned().with_size(size);
         let (regular, bold, italic) = Self::compute_font_keys(&font, &mut self.rasterizer)?;
 
-        self.rasterizer.get_glyph(GlyphKey { font_key: regular, c: 'm', size: font.size() })?;
+        self.rasterizer.get_glyph(GlyphKey {
+            font_key: regular,
+            c: 'm',
+            size: font.size(),
+        })?;
         let metrics = self.rasterizer.metrics(regular, size)?;
 
         info!("Font size changed to {:?} with DPR of {}", font.size, dpr);
@@ -645,16 +660,13 @@ impl QuadRenderer {
             gl::GenBuffers(1, &mut rect_vbo);
             gl::GenBuffers(1, &mut rect_ebo);
             gl::BindVertexArray(rect_vao);
-            let indices: [i32; 6] = [
-                0, 1, 3,
-                1, 2, 3,
-            ];
+            let indices: [i32; 6] = [0, 1, 3, 1, 2, 3];
             gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, rect_ebo);
             gl::BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
                 (size_of::<i32>() * indices.len()) as _,
                 indices.as_ptr() as *const _,
-                gl::STATIC_DRAW
+                gl::STATIC_DRAW,
             );
 
             // Cleanup
@@ -739,7 +751,14 @@ impl QuadRenderer {
             gl::BindBuffer(gl::ARRAY_BUFFER, self.rect_vbo);
 
             // Position
-            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, (size_of::<f32>() * 2) as _, ptr::null());
+            gl::VertexAttribPointer(
+                0,
+                2,
+                gl::FLOAT,
+                gl::FALSE,
+                (size_of::<f32>() * 2) as _,
+                ptr::null(),
+            );
             gl::EnableVertexAttribArray(0);
         }
 
@@ -766,19 +785,19 @@ impl QuadRenderer {
             let padding_y = props.padding_y as i32;
             let width = props.width as i32;
             let height = props.height as i32;
-            gl::Viewport(padding_x, padding_y, width - 2 * padding_x, height - 2 * padding_y);
+            gl::Viewport(
+                padding_x,
+                padding_y,
+                width - 2 * padding_x,
+                height - 2 * padding_y,
+            );
 
             // Disable program
             gl::UseProgram(0);
         }
     }
 
-    pub fn with_api<F, T>(
-        &mut self,
-        config: &Config,
-        props: &term::SizeInfo,
-        func: F,
-    ) -> T
+    pub fn with_api<F, T>(&mut self, config: &Config, props: &term::SizeInfo, func: F) -> T
     where
         F: FnOnce(RenderApi<'_>) -> T,
     {
@@ -862,7 +881,12 @@ impl QuadRenderer {
             let height = height as i32;
             let padding_x = padding_x as i32;
             let padding_y = padding_y as i32;
-            gl::Viewport(padding_x, padding_y, width - 2 * padding_x, height - 2 * padding_y);
+            gl::Viewport(
+                padding_x,
+                padding_y,
+                width - 2 * padding_x,
+                height - 2 * padding_y,
+            );
 
             // update projection
             gl::UseProgram(self.program.id);
@@ -895,19 +919,14 @@ impl QuadRenderer {
 
         unsafe {
             // Setup vertices
-            let vertices: [f32; 8] = [
-                x + width, y         ,
-                x + width, y - height,
-                x        , y - height,
-                x        , y         ,
-            ];
+            let vertices: [f32; 8] = [x + width, y, x + width, y - height, x, y - height, x, y];
 
             // Load vertex data into array buffer
             gl::BufferData(
                 gl::ARRAY_BUFFER,
                 (size_of::<f32>() * vertices.len()) as _,
                 vertices.as_ptr() as *const _,
-                gl::STATIC_DRAW
+                gl::STATIC_DRAW,
             );
 
             // Color
@@ -980,7 +999,7 @@ impl<'a> RenderApi<'a> {
         string: &str,
         line: Line,
         glyph_cache: &mut GlyphCache,
-        color: Option<Rgb>
+        color: Option<Rgb>,
     ) {
         let bg_alpha = color.map(|_| 1.0).unwrap_or(0.0);
         let col = Column(0);
@@ -996,7 +1015,7 @@ impl<'a> RenderApi<'a> {
                     chars[0] = c;
                     chars
                 },
-                bg: color.unwrap_or(Rgb { r: 0, g: 0, b: 0}),
+                bg: color.unwrap_or(Rgb { r: 0, g: 0, b: 0 }),
                 fg: Rgb { r: 0, g: 0, b: 0 },
                 flags: cell::Flags::empty(),
                 bg_alpha,
@@ -1021,9 +1040,13 @@ impl<'a> RenderApi<'a> {
             self.render_batch();
         }
     }
-    
-    pub fn render_glyph_at_position(&mut self, cell: &RenderableCell,
-        glyph_cache: &mut GlyphCache, glyph: char) {
+
+    pub fn render_glyph_at_position(
+        &mut self,
+        cell: &RenderableCell,
+        glyph_cache: &mut GlyphCache,
+        glyph: char,
+    ) {
         if cell.flags.contains(cell::Flags::HIDDEN) {
             return;
         }
@@ -1042,7 +1065,7 @@ impl<'a> RenderApi<'a> {
             size: glyph_cache.font_size,
             c: glyph,
         };
-        
+
         // Add cell to batch
         let glyph = glyph_cache.get(glyph_key, self);
         self.add_render_item(cell, &glyph);
@@ -1106,7 +1129,7 @@ fn load_glyph(
     active_tex: &mut GLuint,
     atlas: &mut Vec<Atlas>,
     current_atlas: &mut usize,
-    rasterized: &RasterizedGlyph
+    rasterized: &RasterizedGlyph,
 ) -> Glyph {
     // At least one atlas is guaranteed to be in the `self.atlas` list; thus
     // the unwrap.
@@ -1121,19 +1144,17 @@ fn load_glyph(
             }
             load_glyph(active_tex, atlas, current_atlas, rasterized)
         }
-        Err(AtlasInsertError::GlyphTooLarge) => {
-            Glyph {
-                tex_id: atlas[*current_atlas].id,
-                top: 0.0,
-                left: 0.0,
-                width: 0.0,
-                height: 0.0,
-                uv_bot: 0.0,
-                uv_left: 0.0,
-                uv_width: 0.0,
-                uv_height: 0.0,
-            }
-        }
+        Err(AtlasInsertError::GlyphTooLarge) => Glyph {
+            tex_id: atlas[*current_atlas].id,
+            top: 0.0,
+            left: 0.0,
+            width: 0.0,
+            height: 0.0,
+            uv_bot: 0.0,
+            uv_left: 0.0,
+            uv_width: 0.0,
+            uv_height: 0.0,
+        },
     }
 }
 
@@ -1191,7 +1212,9 @@ impl TextShaderProgram {
         }
 
         macro_rules! cptr {
-            ($thing:expr) => { $thing.as_ptr() as *const _ }
+            ($thing:expr) => {
+                $thing.as_ptr() as *const _
+            };
         }
 
         macro_rules! assert_uniform_valid {
@@ -1224,16 +1247,16 @@ impl TextShaderProgram {
 
         shader.update_projection(size.width as f32, size.height as f32, 0., 0.);
 
-        unsafe { gl::UseProgram(0); }
+        unsafe {
+            gl::UseProgram(0);
+        }
 
         Ok(shader)
     }
 
     fn update_projection(&self, width: f32, height: f32, padding_x: f32, padding_y: f32) {
         // Bounds check
-        if (width as u32) < (2 * padding_x as u32) ||
-            (height as u32) < (2 * padding_y as u32)
-        {
+        if (width as u32) < (2 * padding_x as u32) || (height as u32) < (2 * padding_y as u32) {
             return;
         }
 
@@ -1282,16 +1305,8 @@ impl RectShaderProgram {
         } else {
             (Some(RECT_SHADER_V), Some(RECT_SHADER_F))
         };
-        let vertex_shader = create_shader(
-            RECT_SHADER_V_PATH,
-            gl::VERTEX_SHADER,
-            vertex_src
-        )?;
-        let fragment_shader = create_shader(
-            RECT_SHADER_F_PATH,
-            gl::FRAGMENT_SHADER,
-            fragment_src
-        )?;
+        let vertex_shader = create_shader(RECT_SHADER_V_PATH, gl::VERTEX_SHADER, vertex_src)?;
+        let fragment_shader = create_shader(RECT_SHADER_F_PATH, gl::FRAGMENT_SHADER, fragment_src)?;
         let program = create_program(vertex_shader, fragment_shader)?;
 
         unsafe {
@@ -1301,9 +1316,7 @@ impl RectShaderProgram {
         }
 
         // get uniform locations
-        let u_color = unsafe {
-            gl::GetUniformLocation(program, b"color\0".as_ptr() as *const _)
-        };
+        let u_color = unsafe { gl::GetUniformLocation(program, b"color\0".as_ptr() as *const _) };
 
         let shader = RectShaderProgram {
             id: program,
@@ -1354,9 +1367,11 @@ fn create_program(vertex: GLuint, fragment: GLuint) -> Result<GLuint, ShaderCrea
     }
 }
 
-fn create_shader(path: &str, kind: GLenum, source: Option<&'static str>)
-    -> Result<GLuint, ShaderCreationError>
-{
+fn create_shader(
+    path: &str,
+    kind: GLenum,
+    source: Option<&'static str>,
+) -> Result<GLuint, ShaderCreationError> {
     let from_disk;
     let source = if let Some(src) = source {
         src
@@ -1386,7 +1401,9 @@ fn create_shader(path: &str, kind: GLenum, source: Option<&'static str>)
         let log = get_shader_info_log(shader);
 
         // Cleanup
-        unsafe { gl::DeleteShader(shader); }
+        unsafe {
+            gl::DeleteShader(shader);
+        }
 
         Err(ShaderCreationError::Compile(PathBuf::from(path), log))
     }
@@ -1488,15 +1505,11 @@ impl ::std::error::Error for ShaderCreationError {
 impl ::std::fmt::Display for ShaderCreationError {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match *self {
-            ShaderCreationError::Io(ref err) => {
-                write!(f, "Couldn't read shader: {}", err)
-            },
+            ShaderCreationError::Io(ref err) => write!(f, "Couldn't read shader: {}", err),
             ShaderCreationError::Compile(ref path, ref log) => {
                 write!(f, "Failed compiling shader at {}: {}", path.display(), log)
-            },
-            ShaderCreationError::Link(ref log) => {
-                write!(f, "Failed linking shader: {}", log)
-            },
+            }
+            ShaderCreationError::Link(ref log) => write!(f, "Failed linking shader: {}", log),
         }
     }
 }
@@ -1607,7 +1620,7 @@ impl Atlas {
     pub fn insert(
         &mut self,
         glyph: &RasterizedGlyph,
-        active_tex: &mut u32
+        active_tex: &mut u32,
     ) -> Result<Glyph, AtlasInsertError> {
         if glyph.width > self.width || glyph.height > self.height {
             return Err(AtlasInsertError::GlyphTooLarge);

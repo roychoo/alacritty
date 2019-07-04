@@ -148,7 +148,11 @@ pub fn new<'a>(
 
     let mut startup_info_ex: STARTUPINFOEXW = Default::default();
 
-    let title = options.title.as_ref().map(|w| w.as_str()).unwrap_or("Alacritty");
+    let title = options
+        .title
+        .as_ref()
+        .map(|w| w.as_str())
+        .unwrap_or("Alacritty");
     let title = U16CString::from_str(title).unwrap();
     startup_info_ex.StartupInfo.lpTitle = title.as_ptr() as LPWSTR;
 

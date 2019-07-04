@@ -31,7 +31,7 @@
 //! // the average won't mean much until it's filled up at least once.
 //! println!("Average time: {}", meter.average());
 
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 const NUM_SAMPLES: usize = 10;
 
