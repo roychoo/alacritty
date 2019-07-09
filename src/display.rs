@@ -476,16 +476,14 @@ impl Display {
                             renderable_cells_rows.push(&grid_cells[row_start..row_end]);
                             row_start = row_end;
                         }
-                        if !rcell.flags.contains(crate::term::cell::Flags::HIDDEN) {
-                            row_end += 1;
-                        }
+                        row_end += 1;
                     }
                     renderable_cells_rows.push(&grid_cells[row_start..]);
                     renderable_cells_rows
                 }
                 let _sampler = self.meter.sampler();
                 let renderable_cells_rows = create_renderable_cell_rows(&grid_cells, g_lines);
-
+                
                 /// Wrapper to allow comparing everything but column and chars
                 struct CmpCell(RenderableCell);
                 impl PartialEq for CmpCell {
@@ -521,6 +519,7 @@ impl Display {
                                 rcell = Some(*c);
                             }
                             run.push(c.chars[0]);
+                            //run.extend(&c.chars[0]);
                             if ii.peek().is_none() {
                                 row.push((*c, run.clone()));
                             }
@@ -560,6 +559,7 @@ impl Display {
                                 } else {
                                     glyph_cache.font_key
                                 };
+                                //println!("Shaped {:?} @ ({:?}, {:?})", text, rc.line, rc.column);
                                 (
                                     rc,
                                     glyph_cache
@@ -591,6 +591,7 @@ impl Display {
                                         KeyType::Char(c @ font::UNDERLINE_CURSOR_CHAR)
                                         | KeyType::Char(c @ font::BEAM_CURSOR_CHAR)
                                         | KeyType::Char(c @ font::BOX_CURSOR_CHAR) => {
+                                            println!("{} @ {:?}", c, rc);
                                             api.render_glyph_at_position(
                                                 &rc,
                                                 glyph_cache,
