@@ -419,6 +419,8 @@ impl Display {
 
         #[cfg(feature = "hb-ft")]
         let g_lines = terminal.grid().num_lines();
+        #[cfg(feature = "hb-ft")]
+        let g_cols = terminal.grid().num_cols();
 
         // Clear when terminal mutex isn't held. Mesa for
         // some reason takes a long time to call glClear(). The driver descends
@@ -480,6 +482,12 @@ impl Display {
                     }
                     renderable_cells_rows.push(&grid_cells[row_start..]);
                     renderable_cells_rows
+                }
+                for rc in &grid_cells {
+                    if rc.column.0 == 0 {
+                        println!()
+                    }
+                    print!("{}", rc.chars[0]);
                 }
                 let _sampler = self.meter.sampler();
                 let renderable_cells_rows = create_renderable_cell_rows(&grid_cells, g_lines);
