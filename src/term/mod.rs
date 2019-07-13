@@ -419,6 +419,158 @@ impl<'a> RenderableCellsIter<'a> {
     }
 }
 
+#[cfg(feature="hb-ft")]
+pub mod text_run {
+    use crate::{
+        index::{Line, Column},
+    };
+    use super::{
+        RenderableCell,
+        color::Rgb, 
+        cell::{MAX_ZEROWIDTH_CHARS, Flags}
+    };
+
+    /// Wrapper to compare cells and check they are in the same text run
+    struct ContiguousCell(RenderableCell);
+    impl PartialEq for ContiguousCell {
+        fn eq(&self, other: &Self) -> bool {
+            let a = self.0;
+            let b = other.0;
+            a.line == b.line
+                && a.fg == b.fg
+                && a.bg == b.bg
+                && a.bg_alpha == b.bg_alpha
+                && a.flags == b.flags
+        }
+    }
+
+    /// Checks two columns are adjacent
+    struct ContiguousColumn(Column);
+    impl PartialEq for ContiguousColumn {
+        fn eq(&self, other: &Self) -> bool {
+            let (a, b) = (self.0, other.0);
+            (a.0 > 0 && a.0 - 1 == b.0) || (b.0 > 0 && b.0 - 1 == a.0)
+        }
+    }
+
+    pub struct TextRun {
+        // By definition a run is on one line.
+        pub line: Line,
+        pub run: (Column, Column),
+        pub run_chars: Vec<[char; MAX_ZEROWIDTH_CHARS + 1]>,
+        pub fg: Rgb,
+        pub bg: Rgb,
+        pub bg_alpha: f32,
+        pub flags: Flags,
+    }
+    impl TextRun {
+        /// Holdover method while converting from rendering Cells to TextRuns
+        pub fn cell_at(&self, col: Column) -> RenderableCell {
+            RenderableCell {
+                line: self.line,
+                column: col,
+                chars: [' '; crate::term::cell::MAX_ZEROWIDTH_CHARS + 1],
+                fg: self.fg,
+                bg: self.bg,
+                bg_alpha: self.bg_alpha,
+                flags: self.flags,
+            }
+        }
+
+        /// Returns iterator over range of columns [run.0, run.1]
+        pub fn col_iter(&self) -> impl Iterator<Item=Column> {
+            let (start, end) = self.run;
+            // unpacking is neccessary while Step trait is nightly
+            // hopefully this compiles away.
+            (start.0..=end.0).map(Column)
+        }
+        
+        /// Iterates over each RenderableCell in column range [run.0, run.1]
+        pub fn cell_iter<'a>(&'a self) -> impl Iterator<Item=RenderableCell> + 'a {
+            self.col_iter().map(move |col| self.cell_at(col))
+        }
+    }
+    pub struct TextRunIter<I> {
+        iter: I,
+        run_start: Option<RenderableCell>,
+        latest: Option<Column>,
+        buffer: Vec<[char; crate::term::cell::MAX_ZEROWIDTH_CHARS + 1]>,
+    }
+    impl<I> TextRunIter<I> {
+        pub fn new(iter: I) -> Self {
+            TextRunIter {
+                iter,
+                latest: None,
+                run_start: None,
+                buffer: Vec::new(),
+            }
+        }
+    }
+    impl<I> Iterator for TextRunIter<I>
+    where
+        I: Iterator<Item = RenderableCell>,
+    {
+        type Item = TextRun;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            let mut output = None;
+            while let Some(rc) = self.iter.next() {
+                if self.latest.is_none() || self.run_start.is_none() {
+                    self.run_start = Some(rc);
+                    self.latest = Some(rc.column);
+                } else if self
+                    .run_start
+                    .map(|cell| ContiguousCell(cell) != ContiguousCell(rc))
+                    .unwrap_or(false)
+                    || self
+                        .latest
+                        .map(|col| ContiguousColumn(col) != ContiguousColumn(rc.column))
+                        .unwrap_or(false)
+                {
+                    let (start, latest) =
+                        (self.run_start.unwrap(), self.latest.unwrap());
+                    output = Some(TextRun {
+                        line: start.line,
+                        run: (start.column, latest),
+                        run_chars: self.buffer.drain(..).collect(),
+                        fg: start.fg,
+                        bg: start.bg,
+                        bg_alpha: start.bg_alpha,
+                        flags: start.flags,
+                    });
+                    // Update latest to new rc
+                    self.latest = Some(rc.column);
+                    self.run_start = Some(rc);
+                    // Reset buffer
+                    self.buffer.push(rc.chars);
+                    break;
+                }
+                self.buffer.push(rc.chars);
+                self.latest = Some(rc.column);
+            }
+            output.or_else(|| {
+                if self.buffer.is_empty() {
+                    None
+                } else {
+                    self.run_start
+                        .and_then(|start| self.latest.map(|latest| (start, latest)))
+                        .map(|(start, latest)|
+                        // Save leftover buffer and empty it
+                        TextRun {
+                            line: start.line,
+                            run: (start.column, latest),
+                            run_chars: self.buffer.drain(..).collect(),
+                            fg: start.fg,
+                            bg: start.bg,
+                            bg_alpha: start.bg_alpha,
+                            flags: start.flags,
+                        })
+                }
+            })
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct RenderableCell {
     /// A _Display_ line (not necessarily an _Active_ line)
