@@ -15,6 +15,7 @@
 //! The display subsystem including window management, font rasterization, and
 //! GPU drawing.
 use std::f64;
+use std::ops::Range;
 use std::sync::mpsc;
 
 use glutin::dpi::{PhysicalPosition, PhysicalSize};
@@ -22,7 +23,7 @@ use parking_lot::MutexGuard;
 
 use crate::cli;
 use crate::config::Config;
-use crate::index::{Line};
+use crate::index::{Column, Line};
 use crate::message_bar::Message;
 use crate::meter::Meter;
 use crate::renderer::rects::{Rect, Rects};
@@ -31,7 +32,7 @@ use crate::sync::FairMutex;
 use crate::term::color::Rgb;
 use crate::term::{RenderableCell, SizeInfo, Term};
 use crate::window::{self, Window};
-use font::{self, Rasterize, KeyType};
+use font::{self, KeyType, Rasterize};
 #[cfg(feature = "hb-ft")]
 use font::{HbFtExt, HbGlyph};
 
@@ -461,32 +462,8 @@ impl Display {
             // Draw grid (HarfBuzz)
             #[cfg(feature = "hb-ft")]
             {
-                fn create_renderable_cell_rows(
-                    grid_cells: &[RenderableCell],
-                    g_lines: Line,
-                ) -> Vec<&[RenderableCell]> {
-                    let mut renderable_cells_rows: Vec<&[RenderableCell]> =
-                        Vec::with_capacity(g_lines.0);
-                    let (mut row_start, mut row_end) = (0, 0);
-                    let mut last_line = None;
-                    for i in 0..grid_cells.len() {
-                        let rcell = grid_cells[i];
-                        if last_line.is_none() {
-                            last_line = Some(rcell.line);
-                        } else if last_line.unwrap() != grid_cells[i].line {
-                            last_line = Some(rcell.line);
-                            renderable_cells_rows.push(&grid_cells[row_start..row_end]);
-                            row_start = row_end;
-                        }
-                        row_end += 1;
-                    }
-                    renderable_cells_rows.push(&grid_cells[row_start..]);
-                    renderable_cells_rows
-                }
-
                 let _sampler = self.meter.sampler();
-                let renderable_cells_rows = create_renderable_cell_rows(&grid_cells, g_lines);
-                
+
                 /// Wrapper to compare cells and check they are in the same text run
                 struct ContiguousCell(RenderableCell);
                 impl PartialEq for ContiguousCell {
@@ -498,52 +475,117 @@ impl Display {
                             && a.bg == b.bg
                             && a.bg_alpha == b.bg_alpha
                             && a.flags == b.flags
-                            && ((b.column.0 > 0 && a.column.0 == b.column.0 - 1) || (a.column.0 > 0 && a.column.0 - 1 == b.column.0))
                     }
                 }
 
-                struct TextRunIter<I: Iterator> {
+                /// Checks two columns are adjacent
+                struct ContiguousColumn(Column);
+                impl PartialEq for ContiguousColumn {
+                    fn eq(&self, other: &Self) -> bool {
+                        let (a, b) = (self.0, other.0);
+                        (a.0 > 0 && a.0 - 1 == b.0) || (b.0 > 0 && b.0 - 1 == a.0)
+                    }
+                }
+
+                // This shouldn't stay here
+                pub struct TextRun {
+                    // By definition a run is on one line.
+                    pub line: Line,
+                    pub run: (Column, Column),
+                    pub run_chars: Vec<[char; crate::term::cell::MAX_ZEROWIDTH_CHARS + 1]>,
+                    pub fg: Rgb,
+                    pub bg: Rgb,
+                    pub bg_alpha: f32,
+                    pub flags: crate::term::cell::Flags,
+                }
+                impl TextRun {
+                    fn cell_at(&self, col: Column) -> RenderableCell {
+                        RenderableCell {
+                            line: self.line,
+                            column: col,
+                            chars: [' '; crate::term::cell::MAX_ZEROWIDTH_CHARS + 1],
+                            fg: self.fg,
+                            bg: self.bg,
+                            bg_alpha: self.bg_alpha,
+                            flags: self.flags,
+                        }
+                    }
+                }
+                struct TextRunIter<I> {
                     iter: I,
-                    buffer: Vec<I::Item>,
-                    latest: Option<I::Item>,
+                    run_start: Option<RenderableCell>,
+                    latest: Option<Column>,
+                    buffer: Vec<[char; crate::term::cell::MAX_ZEROWIDTH_CHARS + 1]>,
                 };
-                impl<I: Iterator> TextRunIter<I> {
+                impl<I> TextRunIter<I> {
                     fn new(iter: I) -> Self {
                         TextRunIter {
                             iter,
-                            buffer: Vec::new(),
                             latest: None,
+                            run_start: None,
+                            buffer: Vec::new(),
                         }
                     }
                 }
                 impl<I> Iterator for TextRunIter<I>
                 where
-                    I: Iterator<Item=RenderableCell>
+                    I: Iterator<Item = RenderableCell>,
                 {
-                    type Item = Vec<I::Item>;
+                    type Item = TextRun;
 
                     fn next(&mut self) -> Option<Self::Item> {
                         let mut output = None;
                         while let Some(rc) = self.iter.next() {
-                            if self.latest.is_none() {
-                                self.latest = Some(rc);
-                            } else if self.latest.map(ContiguousCell).map(|c| c != ContiguousCell(rc)).unwrap_or(false) {
-                                output = Some(self.buffer.drain(..).collect());
+                            if self.latest.is_none() || self.run_start.is_none() {
+                                self.run_start = Some(rc);
+                                self.latest = Some(rc.column);
+                            } else if self
+                                .run_start
+                                .map(|cell| ContiguousCell(cell) != ContiguousCell(rc))
+                                .unwrap_or(false)
+                                || self
+                                    .latest
+                                    .map(|col| ContiguousColumn(col) != ContiguousColumn(rc.column))
+                                    .unwrap_or(false)
+                            {
+                                let (start, latest) =
+                                    (self.run_start.unwrap(), self.latest.unwrap());
+                                output = Some(TextRun {
+                                    line: start.line,
+                                    run: (start.column, latest),
+                                    run_chars: self.buffer.drain(..).collect(),
+                                    fg: start.fg,
+                                    bg: start.bg,
+                                    bg_alpha: start.bg_alpha,
+                                    flags: start.flags,
+                                });
                                 // Update latest to new rc
-                                self.latest = Some(rc);
+                                self.latest = Some(rc.column);
+                                self.run_start = Some(rc);
                                 // Reset buffer
-                                self.buffer.push(rc);
+                                self.buffer.push(rc.chars);
                                 break;
                             }
-                            self.buffer.push(rc);
-                            self.latest = Some(rc);
+                            self.buffer.push(rc.chars);
+                            self.latest = Some(rc.column);
                         }
                         output.or_else(|| {
                             if self.buffer.is_empty() {
                                 None
                             } else {
-                                // Save leftover buffer and empty it
-                                Some(self.buffer.drain(..).collect())
+                                self.run_start
+                                    .and_then(|start| self.latest.map(|latest| (start, latest)))
+                                    .map(|(start, latest)|
+                                    // Save leftover buffer and empty it
+                                    TextRun {
+                                        line: start.line,
+                                        run: (start.column, latest),
+                                        run_chars: self.buffer.drain(..).collect(),
+                                        fg: start.fg,
+                                        bg: start.bg,
+                                        bg_alpha: start.bg_alpha,
+                                        flags: start.flags,
+                                    })
                             }
                         })
                     }
@@ -552,38 +594,44 @@ impl Display {
                 //// Convert each row into a set of text runs
                 //// (i.e. cells with the same display properties)
                 // Shape each run of text.
-                let text_runs: Vec<(RenderableCell, Option<Vec<HbGlyph>>)> = 
+                type HarfBuzzGlyphs = Vec<(Column, HbGlyph)>;
+                let text_runs: Vec<(TextRun, Option<HarfBuzzGlyphs>)> =
                     TextRunIter::new(grid_cells.into_iter())
-                    .map(|row| {
-                        use font::{
-                            BEAM_CURSOR_CHAR, BOX_CURSOR_CHAR, UNDERLINE_CURSOR_CHAR,
-                        };
-                        let rc = row[0];
-                        let run: String = row.iter().map(|rc| rc.chars[0]).collect();
-                        let ends_with_special = run.ends_with(UNDERLINE_CURSOR_CHAR)
-                            || run.ends_with(BEAM_CURSOR_CHAR)
-                            || run.ends_with(BOX_CURSOR_CHAR);
-                        let text = if ends_with_special {
-                            // Leave off last character
-                            let i = run.char_indices().last().unwrap().0;
-                            &run[..i]
-                        } else {
-                            &run
-                        };
-                        let key = if rc.flags.contains(crate::term::cell::Flags::BOLD) {
-                            glyph_cache.bold_key
-                        } else if rc.flags.contains(crate::term::cell::Flags::ITALIC) {
-                            glyph_cache.italic_key
-                        } else {
-                            glyph_cache.font_key
-                        };
-                        (   rc,
-                            glyph_cache
+                        .map(|text_run| {
+                            use font::{BEAM_CURSOR_CHAR, BOX_CURSOR_CHAR, UNDERLINE_CURSOR_CHAR};
+                            let run: String =
+                                text_run.run_chars.iter().map(|chars| chars[0]).collect();
+                            let ends_with_special = run.ends_with(UNDERLINE_CURSOR_CHAR)
+                                || run.ends_with(BEAM_CURSOR_CHAR)
+                                || run.ends_with(BOX_CURSOR_CHAR);
+                            let text = if ends_with_special {
+                                // Leave off last character
+                                let i = run.char_indices().last().unwrap().0;
+                                &run[..i]
+                            } else {
+                                &run
+                            };
+                            let key = if text_run.flags.contains(crate::term::cell::Flags::BOLD) {
+                                glyph_cache.bold_key
+                            } else if text_run.flags.contains(crate::term::cell::Flags::ITALIC) {
+                                glyph_cache.italic_key
+                            } else {
+                                glyph_cache.font_key
+                            };
+                            let shape = glyph_cache
                                 .rasterizer
                                 .shape(text, key, glyph_cache.font_size)
-                        )
-                    })
-                    .collect();
+                                .map(|glyphs| {
+                                    let (start_col, end_col) = text_run.run;
+                                    (start_col.0..=end_col.0)
+                                        .map(Column)
+                                        .zip(glyphs.into_iter())
+                                        .collect()
+                                });
+
+                            (text_run, shape)
+                        })
+                        .collect();
 
                 // Helper that rounds first arg to be a multiple of second arg.
                 #[inline]
@@ -593,34 +641,33 @@ impl Display {
                     a / b
                 }
                 self.renderer.with_api(config, &size_info, |mut api| {
-                    for (mut rc, glyphs) in text_runs.into_iter() {
+                    for (text_run, glyphs) in text_runs.into_iter() {
                         // Render each glyph, advancing based on the information provided.
                         if let Some(glyphs) = glyphs {
-                            for g in glyphs.into_iter() {
+                            for (col, g) in glyphs.into_iter() {
                                 // XXX: what does this do? (for text runs)
-                                rects.update_lines(&rc);
+                                //rects.update_lines(&rc);
+
                                 match g.glyph.c {
                                     // Determine if the glyph is a special character
                                     KeyType::Char(c @ font::UNDERLINE_CURSOR_CHAR)
                                     | KeyType::Char(c @ font::BEAM_CURSOR_CHAR)
                                     | KeyType::Char(c @ font::BOX_CURSOR_CHAR) => {
-                                        println!("{} @ {:?}", c, rc);
                                         api.render_glyph_at_position(
-                                            &rc,
+                                            &text_run.cell_at(col),
                                             glyph_cache,
                                             c,
                                         );
-                                        rc.column.0 += 1;
                                     }
                                     _ => {
                                         // Hold reference to glyph from cache
                                         let glyph = glyph_cache.get(g.glyph, &mut api);
-                                        api.add_render_item(&rc, &glyph);
-                                        rc.column = crate::index::Column(u_round_to(
-                                            rc.column.0 as f32 * size_info.cell_width
-                                                + g.x_advance,
-                                            size_info.cell_width as f32,
-                                        )) + 1;
+                                        api.add_render_item(&text_run.cell_at(col), &glyph);
+                                        //rc.column = crate::index::Column(u_round_to(
+                                        //    rc.column.0 as f32 * size_info.cell_width
+                                        //        + g.x_advance,
+                                        //    size_info.cell_width as f32,
+                                        //)) + 1;
                                     }
                                 }
                             }
