@@ -405,7 +405,8 @@ pub trait Rasterize {
 pub trait HbFtExt {
     /// Shape the provided text into a set of glyphs.
     /// TODO: properly report HarfBuzz errors
-    fn shape(&mut self, text: &str, font_key: FontKey, size: Size) -> Option<Vec<HbGlyph>>;
+    fn shape(&mut self, text: &str, font_key: FontKey, size: Size)
+        -> Result<harfbuzz_rs::GlyphBuffer, HbError>;
 }
 
 /// A HarfBuzz-shaped glyph with advance and offset information.
@@ -420,4 +421,10 @@ pub struct HbGlyph {
     pub codepoint: u32,
     // Probably will never be used
     pub cluster: u32,
+}
+
+#[derive(Debug)]
+pub enum HbError {
+    /// Could not find harfbuzz font for key.
+    MissingFont(FontKey),
 }

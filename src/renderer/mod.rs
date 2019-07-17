@@ -32,31 +32,11 @@ use crate::gl::types::*;
 use crate::index::{Column, Line, RangeInclusive};
 use crate::renderer::rects::{Rect, Rects};
 use crate::term::color::Rgb;
+#[cfg(feature = "hb-ft")]
+use crate::term::text_run::TextRun;
 use crate::term::{self, cell, RenderableCell};
 #[cfg(feature = "hb-ft")]
-use crate::term::text_run::{TextRun};
-//use std::collections::HashMap;
-//use std::fs::File;
-//use std::hash::BuildHasherDefault;
-//use std::io::{self, Read};
-//use std::mem::size_of;
-//use std::path::PathBuf;
-//use std::ptr;
-//use std::sync::mpsc;
-//use std::time::Duration;
-//
-//use fnv::FnvHasher;
-//use glutin::dpi::PhysicalSize;
-//use font::{self, FontDesc, FontKey, GlyphKey, Rasterize, RasterizedGlyph, Rasterizer};
-//use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
-//
-//use crate::gl::types::*;
-//use crate::gl;
-//use crate::index::{Column, Line, RangeInclusive};
-//use crate::term::color::Rgb;
-//use crate::config::{self, Config, Delta};
-//use crate::term::{self, cell, RenderableCell};
-//use crate::renderer::rects::{Rect, Rects};
+use font::HbError;
 
 pub mod rects;
 
@@ -308,6 +288,28 @@ impl GlyphCache {
         self.rasterizer
             .metrics(self.font_key, self.font_size)
             .expect("metrics load since font is loaded at glyph cache creation")
+    }
+
+    #[cfg(feature = "hb-ft")]
+    pub fn shape_run<'a, L>(
+        &'a mut self,
+        text_run: &str,
+        font_key: FontKey,
+        loader: &'a mut L,
+    ) -> Result<Vec<Glyph>, HbError>
+    where
+        L: LoadGlyph,
+    {
+        use font::{HbFtExt};
+        Ok(self.rasterizer.shape(text_run, font_key, self.font_size)?
+            .get_glyph_infos()
+            .iter()
+            .map(move |glyph_info| *self.get(GlyphKey {
+                c: glyph_info.codepoint.into(),
+                font_key,
+                size: self.font_size,
+            }, loader))
+            .collect())
     }
 
     pub fn get<'a, L>(&'a mut self, glyph_key: GlyphKey, loader: &mut L) -> &'a Glyph
@@ -1042,11 +1044,7 @@ impl<'a> RenderApi<'a> {
     }
 
     #[cfg(feature = "hb-ft")]
-    pub fn render_text_run(
-        &mut self,
-        text_run: TextRun,
-        glyph_cache: &mut GlyphCache,
-    ) {
+    pub fn render_text_run(&mut self, text_run: TextRun, glyph_cache: &mut GlyphCache) {
         let font_key = if text_run.flags.contains(cell::Flags::BOLD) {
             glyph_cache.bold_key
         } else if text_run.flags.contains(cell::Flags::ITALIC) {
@@ -1055,42 +1053,34 @@ impl<'a> RenderApi<'a> {
             glyph_cache.font_key
         };
 
-        let hidden = text_run.flags.contains(cell::Flags::HIDDEN);
-        let run: String = if hidden {
-            " ".repeat(text_run.run_chars.len())
-        } else {
-            text_run.run_chars.iter().map(|chars| if chars[0] == '\t' { ' ' } else { chars[0] }).collect()
-        };
-
-        use font::HbFtExt; 
-        let glyphs = glyph_cache.rasterizer.shape(&run, font_key, glyph_cache.font_size).expect("harfbuzz font to be present");
-        for (col, g) in text_run.col_iter().zip(glyphs.into_iter()) {
-            let cell = text_run.cell_at(col);
-            let glyph = glyph_cache.get(g.glyph_key, self);
-            self.add_render_item(&text_run.cell_at(col), &glyph);
-        } 
-
-        for (cell, chars) in text_run.cell_iter().zip(text_run.run_chars.iter()) {
-            let slice: &[char] = &chars[1..];
-            for c in slice.into_iter().filter(|c| **c != ' ') {
-                let glyph_key = GlyphKey {
-                    font_key,
-                    size: glyph_cache.font_size,
-                    c: c.into(),
-                };
-                let average_advance = glyph_cache.metrics.average_advance as f32;
-                let mut glyph = *glyph_cache.get(glyph_key, self);
-
-                // The metrics of zero-width characters are based on rendering
-                // the character after the current cell, with the anchor at the
-                // right side of the preceding character. Since we render the
-                // zero-width characters inside the preceding character, the
-                // anchor has been moved to the right by one cell.
-                glyph.left += average_advance;
-
+        if !text_run.flags.contains(cell::Flags::HIDDEN) {
+            let glyphs: Vec<Glyph> = glyph_cache.shape_run(text_run.text.as_str(), font_key, self)
+                .expect("harfbuzz font to be present");
+            let glyph_and_zero_widths = glyphs.into_iter().zip(text_run.zero_width_chars.iter());
+            for (cell, (glyph, zero_widths)) in text_run.cell_iter().zip(glyph_and_zero_widths) {
                 self.add_render_item(&cell, &glyph);
+
+                for c in zero_widths.iter().filter(|c| **c != ' ') {
+                    let glyph_key = GlyphKey {
+                        font_key,
+                        size: glyph_cache.font_size,
+                        c: c.into(),
+                    };
+                    let average_advance = glyph_cache.metrics.average_advance as f32;
+                    let mut glyph = *glyph_cache.get(glyph_key, self);
+
+                    // The metrics of zero-width characters are based on rendering
+                    // the character after the current cell, with the anchor at the
+                    // right side of the preceding character. Since we render the
+                    // zero-width characters inside the preceding character, the
+                    // anchor has been moved to the right by one cell.
+                    glyph.left += average_advance;
+
+                    self.add_render_item(&cell, &glyph);
+                }
             }
         }
+
     }
 
     pub fn render_cell(&mut self, cell: RenderableCell, glyph_cache: &mut GlyphCache) {

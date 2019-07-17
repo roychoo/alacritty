@@ -15,6 +15,8 @@ use std::collections::HashMap;
 
 use crate::term::cell::Flags;
 use crate::term::color::Rgb;
+#[cfg(feature = "hb-ft")]
+use crate::term::text_run::TextRun;
 use crate::term::{RenderableCell, SizeInfo};
 use font::Metrics;
 
@@ -77,6 +79,53 @@ impl<'a> Rects<'a> {
         }
 
         self.inner
+    }
+
+    #[cfg(feature = "hb-ft")]
+    pub fn update_lines_text_run(&mut self, text_run: &TextRun) {
+        for (flag, start_cell) in self.last_starts.iter_mut() {
+            let flag = *flag;
+            *start_cell = match *start_cell {
+                // Check for end if line is present
+                Some(ref mut start) => {
+                    let last_cell = self.last_cell.unwrap();
+
+                    // No change in line
+                    if text_run.line == start.line
+                        && text_run.flags.contains(flag)
+                        && text_run.fg == start.fg
+                        && text_run.run.0 == last_cell.column + 1
+                    {
+                        continue;
+                    }
+
+                    self.inner.push(create_rect(
+                        &start,
+                        &last_cell,
+                        flag,
+                        &self.metrics,
+                        &self.size,
+                    ));
+
+                    // Start a new line if the flag is present
+                    if text_run.flags.contains(flag) {
+                        Some(text_run.last_cell())
+                    } else {
+                        None
+                    }
+                }
+                // Check for new start of line
+                None => {
+                    if text_run.flags.contains(flag) {
+                        Some(text_run.last_cell())
+                    } else {
+                        None
+                    }
+                }
+            };
+        }
+
+        self.last_cell = Some(text_run.last_cell());
     }
 
     /// Update the stored lines with the next cell info.

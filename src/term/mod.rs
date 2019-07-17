@@ -419,16 +419,14 @@ impl<'a> RenderableCellsIter<'a> {
     }
 }
 
-#[cfg(feature="hb-ft")]
+#[cfg(feature = "hb-ft")]
 pub mod text_run {
-    use crate::{
-        index::{Line, Column},
-    };
     use super::{
+        cell::{Flags, MAX_ZEROWIDTH_CHARS},
+        color::Rgb,
         RenderableCell,
-        color::Rgb, 
-        cell::{MAX_ZEROWIDTH_CHARS, Flags}
     };
+    use crate::index::{Column, Line};
 
     /// Wrapper to compare cells and check they are in the same text run
     struct ContiguousCell(RenderableCell);
@@ -457,7 +455,8 @@ pub mod text_run {
         // By definition a run is on one line.
         pub line: Line,
         pub run: (Column, Column),
-        pub run_chars: Vec<[char; MAX_ZEROWIDTH_CHARS + 1]>,
+        pub text: String,
+        pub zero_width_chars: Vec<[char; MAX_ZEROWIDTH_CHARS]>,
         pub fg: Rgb,
         pub bg: Rgb,
         pub bg_alpha: f32,
@@ -477,16 +476,20 @@ pub mod text_run {
             }
         }
 
+        pub fn last_cell(&self) -> RenderableCell {
+            self.cell_at(self.run.1)
+        }
+
         /// Returns iterator over range of columns [run.0, run.1]
-        pub fn col_iter(&self) -> impl Iterator<Item=Column> {
+        pub fn col_iter(&self) -> impl Iterator<Item = Column> {
             let (start, end) = self.run;
             // unpacking is neccessary while Step trait is nightly
             // hopefully this compiles away.
             (start.0..=end.0).map(Column)
         }
-        
+
         /// Iterates over each RenderableCell in column range [run.0, run.1]
-        pub fn cell_iter<'a>(&'a self) -> impl Iterator<Item=RenderableCell> + 'a {
+        pub fn cell_iter<'a>(&'a self) -> impl Iterator<Item = RenderableCell> + 'a {
             self.col_iter().map(move |col| self.cell_at(col))
         }
     }
@@ -494,7 +497,8 @@ pub mod text_run {
         iter: I,
         run_start: Option<RenderableCell>,
         latest: Option<Column>,
-        buffer: Vec<[char; crate::term::cell::MAX_ZEROWIDTH_CHARS + 1]>,
+        buffer_text: String,
+        buffer_zero_width: Vec<[char; crate::term::cell::MAX_ZEROWIDTH_CHARS]>,
     }
     impl<I> TextRunIter<I> {
         pub fn new(iter: I) -> Self {
@@ -502,7 +506,8 @@ pub mod text_run {
                 iter,
                 latest: None,
                 run_start: None,
-                buffer: Vec::new(),
+                buffer_text: String::new(),
+                buffer_zero_width: Vec::new(),
             }
         }
     }
@@ -527,12 +532,12 @@ pub mod text_run {
                         .map(|col| ContiguousColumn(col) != ContiguousColumn(rc.column))
                         .unwrap_or(false)
                 {
-                    let (start, latest) =
-                        (self.run_start.unwrap(), self.latest.unwrap());
+                    let (start, latest) = (self.run_start.unwrap(), self.latest.unwrap());
                     output = Some(TextRun {
                         line: start.line,
                         run: (start.column, latest),
-                        run_chars: self.buffer.drain(..).collect(),
+                        text: self.buffer_text.drain(..).collect(),
+                        zero_width_chars: self.buffer_zero_width.drain(..).collect(),
                         fg: start.fg,
                         bg: start.bg,
                         bg_alpha: start.bg_alpha,
@@ -542,14 +547,20 @@ pub mod text_run {
                     self.latest = Some(rc.column);
                     self.run_start = Some(rc);
                     // Reset buffer
-                    self.buffer.push(rc.chars);
+                    self.buffer_text.push(rc.chars[0]);
+                    let mut zero_width: [char; MAX_ZEROWIDTH_CHARS] = Default::default();
+                    zero_width.copy_from_slice(&rc.chars[1..]);
+                    self.buffer_zero_width.push(zero_width);
                     break;
                 }
-                self.buffer.push(rc.chars);
+                self.buffer_text.push(rc.chars[0]);
+                let mut zero_width: [char; MAX_ZEROWIDTH_CHARS] = Default::default();
+                zero_width.copy_from_slice(&rc.chars[1..]);
+                self.buffer_zero_width.push(zero_width);
                 self.latest = Some(rc.column);
             }
             output.or_else(|| {
-                if self.buffer.is_empty() {
+                if self.buffer_text.is_empty() {
                     None
                 } else {
                     self.run_start
@@ -559,7 +570,8 @@ pub mod text_run {
                         TextRun {
                             line: start.line,
                             run: (start.column, latest),
-                            run_chars: self.buffer.drain(..).collect(),
+                            text: self.buffer_text.drain(..).collect(),
+                            zero_width_chars: self.buffer_zero_width.drain(..).collect(),
                             fg: start.fg,
                             bg: start.bg,
                             bg_alpha: start.bg_alpha,
